@@ -12,7 +12,7 @@ public class Detect {
     public static final float[] P_BTN_SAMPLE = {380, 1640};
     public static final float[] P_REEL_PANEL = {300, 1378};
     public static final float[] P_BAG = {825, 1600};
-    public static final float[] P_SCATTER = {610, 1350};
+    public static final float[] P_SCATTER = {730, 1350};    // centre of the green button
     public static final float[] P_SAFE = {460, 1050};
     public static final float[] P_DISMISS = {300, 1560};   // below the catch card
     public static final float[] P_CARD_L = {120, 950}, P_CARD_R = {800, 950};
@@ -136,6 +136,33 @@ public class Detect {
 
     static boolean isCardPurple(int[] c) { return c[0] > 100 && c[0] < 190 && c[1] < 40 && c[2] > 180; }
 
+    /** Fraction of pixels in a reference-space box that match a colour test. */
+    interface Px { boolean ok(int r, int g, int b); }
+
+    static float coverage(Frame f, float x0, float y0, float x1, float y1, Px t) {
+        int n = 0, hit = 0;
+        for (int y = f.sy(y0); y < f.sy(y1); y++) {
+            for (int x = f.sx(x0); x < f.sx(x1); x++) {
+                n++;
+                if (t.ok(f.r(x, y), f.g(x, y), f.b(x, y))) hit++;
+            }
+        }
+        return n == 0 ? 0 : hit / (float) n;
+    }
+
+    /** Green "Scatter Bait" button coverage (high = bag popup open with bait available). */
+    public static float scatterGreen(Frame f) {
+        return coverage(f, 600, 1318, 860, 1382, (r, g, b) -> g > 150 && r < 170 && b < 100 && g - r > 40);
+    }
+
+    /** Yellow "Notify Team" button coverage (high = bag popup is open at all). */
+    public static float notifyYellow(Frame f) {
+        return coverage(f, 600, 1425, 860, 1480, (r, g, b) -> r > 220 && g > 170 && b < 90);
+    }
+
+    public static boolean bagPopupOpen(Frame f) { return notifyYellow(f) > 0.3f; }
+    public static boolean scatterAvailable(Frame f) { return scatterGreen(f) > 0.3f; }
+
     static boolean isWhite(int[] c) { return c[0] > 225 && c[1] > 225 && c[2] > 215; }
 
     public static boolean isLuckPopup(Frame f) {
@@ -174,7 +201,7 @@ public class Detect {
         int[] btn = patch(f, P_BTN_SAMPLE);
         if (isCardPurple(patch(f, P_CARD_L)) && isCardPurple(patch(f, P_CARD_R))
                 && btn[0] < 110 && btn[1] < 60) return State.CATCH;
-        if (isGreen(patch(f, P_SCATTER)) && isGreen(btn)) return State.BAIT_POPUP;
+        if (isGreen(btn) && (bagPopupOpen(f) || scatterAvailable(f))) return State.BAIT_POPUP;
         if (isGreen(btn)) return State.IDLE;
         if (isGrey(btn)) return State.WAITING;
         if (isPurple(btn)) {

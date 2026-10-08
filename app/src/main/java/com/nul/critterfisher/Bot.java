@@ -219,26 +219,53 @@ public class Bot implements Runnable {
         int n = Detect.isLuckPopup(p) ? Detect.countBaitRows(p) : -1;
         tap(Detect.P_LUCK_CLOSE);                  // only tapped when the popup is confirmed open
         waitFor(State.IDLE, 2500);
+        sleepMs(500);                              // closing animation
         return n;
     }
 
-    /** 1 = scattered, 0 = no bait / button unavailable. */
+    /** Opens the bait bag popup, retrying. Returns the frame showing it, or null. */
+    private Frame openBag() {
+        for (int attempt = 0; attempt < 3 && alive; attempt++) {
+            Frame cur = host.next(60);
+            if (cur != null && Detect.bagPopupOpen(cur)) return cur;
+            if (cur != null && Detect.stateOf(cur, null) != State.IDLE) {
+                waitFor(State.IDLE, 1500);         // let the previous popup finish closing
+            }
+            sleepMs(400);
+            if (!tap(Detect.P_BAG)) return null;
+            long end = System.nanoTime() + 1_800_000_000L;
+            while (alive && System.nanoTime() < end) {
+                Frame f = host.next(60);
+                if (f != null && Detect.bagPopupOpen(f)) {
+                    sleepMs(250);                  // let the button finish animating in
+                    return host.next(60);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 1 = scattered, 0 = out of bait, -1 = couldn't open the bag. */
     private int scatterOnce() {
-        st.bait = "bait: scattering...";
+        st.bait = "bait: opening bag...";
         push(true);
-        if (!tap(Detect.P_BAG)) return 0;
-        Frame p = waitFor(State.BAIT_POPUP, 1500);
-        if (p == null) {
-            tap(Detect.P_SAFE);                    // close a popup without a usable button
-            sleepMs(500);
+        Frame p = openBag();
+        if (p == null) return -1;
+        if (!Detect.scatterAvailable(p)) {
+            sleepMs(300);
+            p = host.next(60);
+        }
+        if (!Detect.scatterAvailable(p)) {         // popup is open but no usable button
+            tap(Detect.P_SAFE);
+            sleepMs(600);
             return 0;
         }
         tap(Detect.P_SCATTER);
         sleepMs(1200);
         Frame q = host.next(100);
-        if (q != null && Detect.stateOf(q, null) == State.BAIT_POPUP) {
+        if (q != null && Detect.bagPopupOpen(q)) {
             tap(Detect.P_SAFE);
-            sleepMs(500);
+            waitFor(State.IDLE, 1500);
         }
         return 1;
     }
@@ -248,18 +275,20 @@ public class Bot implements Runnable {
         lastBaitCheck = now();
         baitNote = "";
         int n = readActiveBait();
-        boolean outOfBait = false;
+        boolean outOfBait = false, bagFailed = false;
         for (int round = 0; round < 3 && alive && running; round++) {
             if (n >= MAX_BAIT) break;
             int need = n < 0 ? 1 : MAX_BAIT - n;   // unknown: try one, then re-read
             int done = 0;
             for (int i = 0; i < need; i++) {
-                if (scatterOnce() == 0) { outOfBait = true; break; }
+                int r = scatterOnce();
+                if (r == 0) { outOfBait = true; break; }
+                if (r < 0) { bagFailed = true; break; }
                 done++;
             }
             int n2 = readActiveBait();
             msg(String.format("Scattered %d bait, active now %s", done, n2 < 0 ? "?" : n2 + "/" + MAX_BAIT));
-            if (outOfBait) { n = n2; break; }
+            if (outOfBait || bagFailed) { n = n2; break; }
             if (n2 >= 0 && n >= 0 && n2 <= n) {    // nothing changed: game refused or lagging
                 sleepMs(1500);
                 n2 = readActiveBait();
@@ -269,9 +298,11 @@ public class Bot implements Runnable {
         }
         activeBait = n;
         if (outOfBait) baitNote = "out of bait";
+        if (bagFailed) baitNote = "bag didn't open, retrying";
         if (n < 0) baitNote = "couldn't read Luck panel";
         double t = now();
         if (outOfBait) nextBaitCheck = t + 300;
+        else if (bagFailed) nextBaitCheck = t + 20;
         else if (n >= MAX_BAIT) nextBaitCheck = t + Settings.baitRecheckSec;
         else nextBaitCheck = t + 45;
         Frame f = waitFor(State.IDLE, 1500);
