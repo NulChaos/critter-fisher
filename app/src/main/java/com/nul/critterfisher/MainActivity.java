@@ -20,7 +20,9 @@ import android.widget.Toast;
 /** Setup screen: grant overlay + tap service, then start the floating panel. */
 public class MainActivity extends Activity {
     private static final int REQ_CAPTURE = 42;
-    private TextView overlayBtn, tapBtn, startBtn;
+    private TextView overlayBtn, tapBtn, startBtn, updateTv, updateBtn;
+    private String pendingApk;
+    private boolean installing = false;
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
@@ -81,6 +83,21 @@ public class MainActivity extends Activity {
         root.addView(text("When asked, choose to share the ENTIRE screen. Then open the Fishing Contest and press ▶ on the panel. Keep the panel near the top of the screen so it doesn't cover the bar or buttons.",
                 13, 0xFF8FA0BD));
 
+        updateTv = text("Build " + Updater.currentBuild(this), 13, 0xFF8FA0BD);
+        updateTv.setPadding(0, dp(24), 0, 0);
+        root.addView(updateTv);
+        updateBtn = button("Check for updates");
+        paint(updateBtn, 0xFF3A4660);
+        updateBtn.setOnClickListener(v -> {
+            if (pendingApk != null) installUpdate(); else checkUpdate();
+        });
+        root.addView(updateBtn);
+
+        if (getIntent().getBooleanExtra("updated", false)) {
+            Toast.makeText(this, "Updated to build " + Updater.currentBuild(this)
+                    + " - tap Start again", Toast.LENGTH_LONG).show();
+        }
+
         ScrollView sv = new ScrollView(this);
         sv.addView(root);
         sv.setBackgroundColor(0xFF10151F);
@@ -98,6 +115,36 @@ public class MainActivity extends Activity {
         boolean ready = overlay && taps;
         startBtn.setText(BotService.active ? "Panel is running (tap to restart)" : "3. Start floating panel");
         paint(startBtn, ready ? 0xFF2E9E4F : 0xFF444C5C);
+        if (pendingApk != null && !installing && getPackageManager().canRequestPackageInstalls()) {
+            installUpdate();          // came back from granting the permission
+        } else if (pendingApk == null) {
+            checkUpdate();
+        }
+    }
+
+    private void checkUpdate() {
+        int cur = Updater.currentBuild(this);
+        updateTv.setText("Build " + cur + " · checking for updates...");
+        Updater.check((latest, url, err) -> {
+            if (err != null) { updateTv.setText("Build " + cur + " · update check failed: " + err); return; }
+            if (latest <= cur) { updateTv.setText("Build " + cur + " · up to date"); return; }
+            pendingApk = url;
+            updateTv.setText("Build " + cur + " · build " + latest + " available");
+            updateBtn.setText("Update to build " + latest);
+            paint(updateBtn, 0xFF5B4BB0);
+            installUpdate();          // automatic
+        });
+    }
+
+    private void installUpdate() {
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            updateTv.setText("Allow Critter Fisher to install updates (one time), then come back");
+            startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName())));
+            return;
+        }
+        installing = true;
+        Updater.install(this, pendingApk, s -> updateTv.setText(s));
     }
 
     private void startCapture() {

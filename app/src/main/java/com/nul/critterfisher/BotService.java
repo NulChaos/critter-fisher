@@ -64,6 +64,38 @@ public class BotService extends Service implements Bot.Host {
     private BarView miniBar, strip;
     private LinearLayout settingsBox;
     private final Bot.Status shown = new Bot.Status();
+    private String pendingApk;
+    private int pendingBuild, myBuild;
+    private final Runnable updateCheck = new Runnable() {
+        @Override public void run() {
+            Updater.check((latest, url, err) -> {
+                if (err == null && latest > Updater.currentBuild(BotService.this)) {
+                    pendingApk = url;
+                    pendingBuild = latest;
+                    maybeInstallUpdate();
+                }
+            });
+            main.postDelayed(this, 20 * 60 * 1000L);
+        }
+    };
+
+    /** Installs a waiting update, but never while the bot is running. */
+    private void maybeInstallUpdate() {
+        if (pendingApk == null) return;
+        if (bot != null && bot.running) {
+            shown.message = "Build " + pendingBuild + " ready - installs when you pause";
+            refreshUi();
+            return;
+        }
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            shown.message = "Update available - open the app to allow updates";
+            refreshUi();
+            return;
+        }
+        String url = pendingApk;
+        pendingApk = null;
+        Updater.install(this, url, msg -> { shown.message = msg; refreshUi(); });
+    }
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -76,6 +108,7 @@ public class BotService extends Service implements Bot.Host {
 
         startInForeground();
         Settings.load(this);
+        myBuild = Updater.currentBuild(this);
 
         int code = intent.getIntExtra("code", 0);
         Intent data = intent.getParcelableExtra("data");
@@ -108,6 +141,7 @@ public class BotService extends Service implements Bot.Host {
         botThread.start();
         shown.message = "Open the Fishing Contest, then press ▶";
         refreshUi();
+        main.postDelayed(updateCheck, 3000);
         return START_NOT_STICKY;
     }
 
@@ -137,6 +171,7 @@ public class BotService extends Service implements Bot.Host {
 
     @Override public void onDestroy() {
         active = false;
+        main.removeCallbacks(updateCheck);
         if (bot != null) { bot.alive = false; bot.running = false; }
         try { if (panel != null) wm.removeView(panel); } catch (Exception ignored) { }
         try { if (strip != null) wm.removeView(strip); } catch (Exception ignored) { }
@@ -303,6 +338,7 @@ public class BotService extends Service implements Bot.Host {
             shown.running = bot.running;
             shown.message = bot.running ? "Running" : "Paused";
             refreshUi();
+            if (!bot.running) maybeInstallUpdate();
         });
         gear.setOnClickListener(v -> {
             boolean open = settingsBox.getVisibility() != View.VISIBLE;
@@ -394,7 +430,8 @@ public class BotService extends Service implements Bot.Host {
         if (statusTv == null) return;
         playBtn.setText(shown.running ? "❚❚" : "▶");
         String tapState = TapService.instance == null ? "  [taps OFF]" : "";
-        statusTv.setText(String.format("%s · %dfps · catches %d%s\n%s\n%s",
+        statusTv.setText(String.format("b%d %s · %dfps · catches %d%s\n%s\n%s",
+                myBuild,
                 shown.running ? shown.state.name().toLowerCase() : "paused",
                 shown.fps, shown.catches, tapState, shown.bait, shown.message));
         miniBar.invalidate();
