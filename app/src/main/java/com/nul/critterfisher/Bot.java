@@ -175,6 +175,8 @@ public class Bot implements Runnable {
     }
 
     private String baitReason = "ready";
+    /** When our own baits were scattered (each lasts 10 minutes). */
+    private final java.util.ArrayDeque<Double> myBaits = new java.util.ArrayDeque<>();
 
     private void updateBaitInfo(double t) {
         if (!Settings.useBait) st.bait = "bait: off";
@@ -207,10 +209,19 @@ public class Bot implements Runnable {
         Frame after = host.next(200);
         if (after == null) return;
         if (Detect.sameMask(before, Detect.cloverMask(after))) {
-            baitPauseUntil = now() + Settings.baitRecheckSec;
-            baitReason = "luck didn't change (limit?)";
+            double tn = now();
+            while (!myBaits.isEmpty() && tn - myBaits.peekFirst() > 600) myBaits.pollFirst();
+            if (!myBaits.isEmpty()) {
+                // limit reached: retry right after our oldest bait expires
+                baitPauseUntil = myBaits.peekFirst() + 603;
+                baitReason = "at limit, " + myBaits.size() + " of mine active";
+            } else {
+                baitPauseUntil = tn + Settings.baitRecheckSec;
+                baitReason = "luck didn't change (limit?)";
+            }
             msg("Tapped Scatter Bait, luck number didn't change");
         } else {
+            myBaits.addLast(now());
             msg("Scattered bait - luck up");
         }
     }
