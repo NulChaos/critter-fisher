@@ -17,6 +17,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Decode signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "KEYSTORE_B64 secret is missing"; exit 1; fi
+          echo "$KEYSTORE_B64" | tr -d ' \n\r' | base64 -d > keystore.p12
       - name: Build
         run: gradle assembleRelease -PversionCode=${{ github.run_number }} --stacktrace
       - name: Rename

@@ -12,7 +12,8 @@ android {
     }
     signingConfigs {
         release {
-            storeFile rootProject.file('keystore.jks')
+            storeFile rootProject.file('keystore.p12')   // written from the KEYSTORE_B64 secret
+            storeType 'pkcs12'
             storePassword 'critter'
             keyAlias 'critter'
             keyPassword 'critter'
