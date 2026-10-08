@@ -16,12 +16,16 @@ public class Detect {
     public static final float[] P_SAFE = {460, 1050};
     public static final float[] P_DISMISS = {300, 1560};   // below the catch card
     public static final float[] P_CARD_L = {120, 950}, P_CARD_R = {800, 950};
+    public static final float[] P_CLOVER = {95, 1600};         // opens the Luck Level popup
+    public static final float[] P_LUCK_CLOSE = {461, 1910};    // X button of that popup
+    public static final float[] P_LUCK_TITLE = {100, 520}, P_LUCK_WHITE1 = {460, 600},
+            P_LUCK_WHITE2 = {460, 1500};
     public static final float BAR_Y = 1463, BAR_X0 = 245, BAR_X1 = 705;
     public static final float MARKER_Y0 = 1400, MARKER_Y1 = 1510;
     public static final float[] CLOVER_BOX = {62, 1565, 130, 1637};
     public static final float STRIP_Y = 1520;   // where the on-screen markers are drawn
 
-    public enum State { IDLE, BAIT_POPUP, WAITING, REEL, HOOKED, MINIGAME, CATCH, UNKNOWN }
+    public enum State { IDLE, BAIT_POPUP, WAITING, REEL, HOOKED, MINIGAME, CATCH, LUCK_POPUP, UNKNOWN }
 
     /** A captured frame: RGBA bytes with row stride. */
     public static class Frame {
@@ -132,7 +136,41 @@ public class Detect {
 
     static boolean isCardPurple(int[] c) { return c[0] > 100 && c[0] < 190 && c[1] < 40 && c[2] > 180; }
 
+    static boolean isWhite(int[] c) { return c[0] > 225 && c[1] > 225 && c[2] > 215; }
+
+    public static boolean isLuckPopup(Frame f) {
+        int[] t = patch(f, P_LUCK_TITLE);
+        return isWhite(patch(f, P_LUCK_WHITE1)) && isWhite(patch(f, P_LUCK_WHITE2))
+                && t[2] > 130 && t[2] - t[0] > 40 && t[1] < 120;
+    }
+
+    /**
+     * Counts rows in the Luck Level popup that have a timer (clock icon) - i.e. active
+     * scattered baits. Felicia's Rod has no timer, so it isn't counted.
+     */
+    public static int countBaitRows(Frame f) {
+        int x0 = f.sx(700), x1 = f.sx(726);
+        int y0 = f.sy(1000), y1 = f.sy(1800);
+        int minRun = Math.max(2, f.sy(18) - f.sy(0));
+        int rows = 0, run = 0;
+        for (int y = y0; y < y1; y++) {
+            boolean hit = false;
+            for (int x = x0; x < x1 && !hit; x++) {
+                int r = f.r(x, y), g = f.g(x, y), b = f.b(x, y);
+                hit = b > 130 && b - r > 45 && r < 140 && g < 125;
+            }
+            if (hit) run++;
+            else {
+                if (run >= minRun) rows++;
+                run = 0;
+            }
+        }
+        if (run >= minRun) rows++;
+        return rows;
+    }
+
     public static State stateOf(Frame f, Bar[] barOut) {
+        if (isLuckPopup(f)) return State.LUCK_POPUP;
         int[] btn = patch(f, P_BTN_SAMPLE);
         if (isCardPurple(patch(f, P_CARD_L)) && isCardPurple(patch(f, P_CARD_R))
                 && btn[0] < 110 && btn[1] < 60) return State.CATCH;

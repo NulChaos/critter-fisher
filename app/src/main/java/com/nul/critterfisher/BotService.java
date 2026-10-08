@@ -309,17 +309,17 @@ public class BotService extends Service implements Bot.Host {
                 v -> Settings.aimInsetPct = v);
         addSlider("Reel-in tap interval", "ms", 40, 400, Settings.reelTapMs,
                 v -> Settings.reelTapMs = v);
-        addCheck("Use bait (until luck limit)", Settings.useBait, v -> Settings.useBait = v);
-        addSlider("Bait recheck after limit", "s", 30, 600, Settings.baitRecheckSec,
+        addCheck("Use bait (keep 4 active)", Settings.useBait, v -> Settings.useBait = v);
+        addSlider("Re-check bait when maxed every", "s", 30, 600, Settings.baitRecheckSec,
                 v -> Settings.baitRecheckSec = v);
         addCheck("Show markers on the game", Settings.showMarkers, v -> {
             Settings.showMarkers = v;
             strip.invalidate();
         });
-        TextView baitNow = button("Try bait now", 0xFF5B4BB0);
+        TextView baitNow = button("Check bait now", 0xFF5B4BB0);
         baitNow.setOnClickListener(v -> {
             bot.forceBait = true;
-            shown.message = "Will try bait on the next idle screen";
+            shown.message = "Will check bait on the next idle screen";
             refreshUi();
         });
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(

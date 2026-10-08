@@ -8,7 +8,7 @@ public class Settings {
     public static volatile int tapLatencyMs = 50;   // tap -> game reaction
     public static volatile int aimInsetPct = 22;    // % of zone kept clear on each side
     public static volatile boolean useBait = true;
-    public static volatile int baitRecheckSec = 150;
+    public static volatile int baitRecheckSec = 90;
     public static volatile boolean showMarkers = true;
     public static volatile int reelTapMs = 100;
 

@@ -132,6 +132,10 @@ public class Bot implements Runnable {
                     break;
                 case HOOKED:
                     break;
+                case LUCK_POPUP:
+                    tap(Detect.P_LUCK_CLOSE);
+                    sleepMs(600);
+                    break;
                 case CATCH:
                     if (catchSince < 0) catchSince = t;
                     if (t - catchSince > 0.7 && t - lastCatchTap > 0.8) {
@@ -158,9 +162,13 @@ public class Bot implements Runnable {
     }
 
     private void handleIdle(Frame f) {
-        if (forceBait || (Settings.useBait && now() > baitPauseUntil)) {
+        double t = now();
+        boolean cloverChanged = verifiedMask != null
+                && !Detect.sameMask(verifiedMask, Detect.cloverMask(f));
+        if (forceBait || (Settings.useBait && (t >= nextBaitCheck
+                || (cloverChanged && t - lastBaitCheck > 20)))) {
             forceBait = false;
-            tryScatter(f);
+            baitRoutine();
             return;
         }
         if (!tap(Detect.P_CAST_BTN)) { sleepMs(1000); return; }
@@ -174,56 +182,101 @@ public class Bot implements Runnable {
         sleepMs(1000);
     }
 
-    private String baitReason = "ready";
-    /** When our own baits were scattered (each lasts 10 minutes). */
-    private final java.util.ArrayDeque<Double> myBaits = new java.util.ArrayDeque<>();
+    // ------------------------------------------------------------------ bait
+    public static final int MAX_BAIT = 4;      // game's stack limit
+    private double nextBaitCheck = 0, lastBaitCheck = 0;
+    private boolean[] verifiedMask = null;
+    private int activeBait = -1;
+    private String baitNote = "";
 
     private void updateBaitInfo(double t) {
-        if (!Settings.useBait) st.bait = "bait: off";
-        else if (t < baitPauseUntil) {
-            int left = (int) (baitPauseUntil - t);
-            st.bait = String.format("bait: %s, retry in %d:%02d", baitReason, left / 60, left % 60);
-        } else st.bait = "bait: ready (used on next idle screen)";
+        if (!Settings.useBait) { st.bait = "bait: off"; return; }
+        String a = activeBait < 0 ? "?" : (activeBait + "/" + MAX_BAIT);
+        int left = (int) Math.max(0, nextBaitCheck - t);
+        st.bait = String.format("bait active %s%s · check in %d:%02d", a,
+                baitNote.isEmpty() ? "" : " (" + baitNote + ")", left / 60, left % 60);
     }
 
-    private void tryScatter(Frame f) {
-        st.bait = "bait: opening bag...";
+    /** Waits until the screen shows the given state. Returns that frame, or null. */
+    private Frame waitFor(State want, long ms) {
+        long end = System.nanoTime() + ms * 1_000_000L;
+        while (alive && System.nanoTime() < end) {
+            Frame f = host.next(60);
+            if (f != null && Detect.stateOf(f, null) == want) return f;
+        }
+        return null;
+    }
+
+    /** Opens the Luck Level popup and counts active baits. -1 if it didn't open. */
+    private int readActiveBait() {
+        st.bait = "bait: reading Luck panel...";
         push(true);
-        boolean[] before = Detect.cloverMask(f);
-        if (!tap(Detect.P_BAG)) { baitPauseUntil = now() + 5; baitReason = "tap service off"; return; }
-        sleepMs(800);
-        Frame pop = host.next(200);
-        if (pop == null || !Detect.isGreen(Detect.patch(pop, Detect.P_SCATTER))) {
-            baitPauseUntil = now() + 300;
-            baitReason = "no bait / button not found";
-            int[] c = pop == null ? new int[3] : Detect.patch(pop, Detect.P_SCATTER);
-            msg(String.format("Scatter button not seen (color %d,%d,%d)", c[0], c[1], c[2]));
-            tap(Detect.P_SAFE);
-            sleepMs(600);
-            return;
+        if (!tap(Detect.P_CLOVER)) return -1;
+        Frame p = waitFor(State.LUCK_POPUP, 2500);
+        if (p == null) return -1;
+        sleepMs(350);                              // let the rows finish appearing
+        p = host.next(100);
+        int n = Detect.isLuckPopup(p) ? Detect.countBaitRows(p) : -1;
+        tap(Detect.P_LUCK_CLOSE);                  // only tapped when the popup is confirmed open
+        waitFor(State.IDLE, 2500);
+        return n;
+    }
+
+    /** 1 = scattered, 0 = no bait / button unavailable. */
+    private int scatterOnce() {
+        st.bait = "bait: scattering...";
+        push(true);
+        if (!tap(Detect.P_BAG)) return 0;
+        Frame p = waitFor(State.BAIT_POPUP, 1500);
+        if (p == null) {
+            tap(Detect.P_SAFE);                    // close a popup without a usable button
+            sleepMs(500);
+            return 0;
         }
         tap(Detect.P_SCATTER);
-        sleepMs(1300);
-        tap(Detect.P_SAFE);
-        sleepMs(700);
-        Frame after = host.next(200);
-        if (after == null) return;
-        if (Detect.sameMask(before, Detect.cloverMask(after))) {
-            double tn = now();
-            while (!myBaits.isEmpty() && tn - myBaits.peekFirst() > 600) myBaits.pollFirst();
-            if (!myBaits.isEmpty()) {
-                // limit reached: retry right after our oldest bait expires
-                baitPauseUntil = myBaits.peekFirst() + 603;
-                baitReason = "at limit, " + myBaits.size() + " of mine active";
-            } else {
-                baitPauseUntil = tn + Settings.baitRecheckSec;
-                baitReason = "luck didn't change (limit?)";
-            }
-            msg("Tapped Scatter Bait, luck number didn't change");
-        } else {
-            myBaits.addLast(now());
-            msg("Scattered bait - luck up");
+        sleepMs(1200);
+        Frame q = host.next(100);
+        if (q != null && Detect.stateOf(q, null) == State.BAIT_POPUP) {
+            tap(Detect.P_SAFE);
+            sleepMs(500);
         }
+        return 1;
+    }
+
+    /** Reads how many baits are active and scatters until the stack limit is reached. */
+    private void baitRoutine() {
+        lastBaitCheck = now();
+        baitNote = "";
+        int n = readActiveBait();
+        boolean outOfBait = false;
+        for (int round = 0; round < 3 && alive && running; round++) {
+            if (n >= MAX_BAIT) break;
+            int need = n < 0 ? 1 : MAX_BAIT - n;   // unknown: try one, then re-read
+            int done = 0;
+            for (int i = 0; i < need; i++) {
+                if (scatterOnce() == 0) { outOfBait = true; break; }
+                done++;
+            }
+            int n2 = readActiveBait();
+            msg(String.format("Scattered %d bait, active now %s", done, n2 < 0 ? "?" : n2 + "/" + MAX_BAIT));
+            if (outOfBait) { n = n2; break; }
+            if (n2 >= 0 && n >= 0 && n2 <= n) {    // nothing changed: game refused or lagging
+                sleepMs(1500);
+                n2 = readActiveBait();
+                if (n2 <= n) { n = n2; baitNote = "game refused"; break; }
+            }
+            n = n2;
+        }
+        activeBait = n;
+        if (outOfBait) baitNote = "out of bait";
+        if (n < 0) baitNote = "couldn't read Luck panel";
+        double t = now();
+        if (outOfBait) nextBaitCheck = t + 300;
+        else if (n >= MAX_BAIT) nextBaitCheck = t + Settings.baitRecheckSec;
+        else nextBaitCheck = t + 45;
+        Frame f = waitFor(State.IDLE, 1500);
+        verifiedMask = f != null ? Detect.cloverMask(f) : null;
+        if (n >= MAX_BAIT) msg("Luck maxed: " + n + "/" + MAX_BAIT + " bait active");
     }
 
     private void handleMinigame(Frame f, Bar bar) {
