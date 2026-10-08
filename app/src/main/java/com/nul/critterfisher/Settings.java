@@ -14,7 +14,13 @@ public class Settings {
     public static volatile int pinballLaunches = 100;     // 0 = no limit
     public static volatile int pinballIntervalMs = 1200;
     public static volatile int pinballPopupWaitSec = 8;
-    public static volatile int mode = 0;                  // 0 fishing, 1 pinball
+    public static volatile int mode = 0;
+    public static volatile int stopAfterMin = 0;          // 0 = never
+    public static volatile int stopAfterCatches = 0;      // fishing, 0 = never
+    public static volatile boolean alertOnPause = true;
+    public static volatile boolean tapJitter = true;
+    public static volatile boolean minimized = false;
+    public static volatile int calcCurrency = 2, calcTarget = 100;                  // 0 fishing, 1 pinball
 
     public static void load(Context c) {
         SharedPreferences p = c.getSharedPreferences("cf", Context.MODE_PRIVATE);
@@ -28,6 +34,13 @@ public class Settings {
         pinballIntervalMs = p.getInt("pbMs", pinballIntervalMs);
         pinballPopupWaitSec = p.getInt("pbWait", pinballPopupWaitSec);
         mode = p.getInt("mode", mode);
+        stopAfterMin = p.getInt("stopMin", stopAfterMin);
+        stopAfterCatches = p.getInt("stopN", stopAfterCatches);
+        alertOnPause = p.getBoolean("alert", alertOnPause);
+        tapJitter = p.getBoolean("jitter", tapJitter);
+        minimized = p.getBoolean("mini", minimized);
+        calcCurrency = p.getInt("calcCur", calcCurrency);
+        calcTarget = p.getInt("calcN", calcTarget);
     }
 
     public static void save(Context c) {
@@ -36,6 +49,10 @@ public class Settings {
                 .putBoolean("bait", useBait).putInt("recheck", baitRecheckSec)
                 .putBoolean("markers", showMarkers).putInt("reel", reelTapMs)
                 .putInt("pbN", pinballLaunches).putInt("pbMs", pinballIntervalMs)
-                .putInt("pbWait", pinballPopupWaitSec).putInt("mode", mode).apply();
+                .putInt("pbWait", pinballPopupWaitSec).putInt("mode", mode)
+                .putInt("stopMin", stopAfterMin).putInt("stopN", stopAfterCatches)
+                .putBoolean("alert", alertOnPause).putBoolean("jitter", tapJitter)
+                .putBoolean("mini", minimized).putInt("calcCur", calcCurrency)
+                .putInt("calcN", calcTarget).apply();
     }
 }

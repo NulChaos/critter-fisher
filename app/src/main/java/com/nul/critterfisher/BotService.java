@@ -38,6 +38,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.nio.ByteBuffer;
+import java.util.Random;
 
 /** Foreground service: screen capture + floating control panel + bot thread. */
 public class BotService extends Service implements Bot.Host {
@@ -71,6 +72,7 @@ public class BotService extends Service implements Bot.Host {
     private void selectMode(int i) {
         if (modes == null) return;
         i = Math.max(0, Math.min(modes.length - 1, i));
+        userStopped = true;
         if (current != null) current.setRunning(false);
         current = modes[i];
         Settings.mode = i;
@@ -85,7 +87,7 @@ public class BotService extends Service implements Bot.Host {
                 : "Pinball: open the Goldrush tab, then press ▶";
         if (modeBtn != null) {
             modeBtn.setText(MODE_ICONS[i]);
-            miniBar.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+            miniBar.setVisibility(i == 0 && !Settings.minimized ? View.VISIBLE : View.GONE);
             fishSettings.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
             pinballSettings.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
         }
@@ -174,8 +176,10 @@ public class BotService extends Service implements Bot.Host {
         pt.start();
         modes = new Mode[]{bot, pinball};
         selectMode(Settings.mode);
+        applyMinimized();
         refreshUi();
         main.postDelayed(updateCheck, 3000);
+        main.postDelayed(limitCheck, 2000);
         return START_NOT_STICKY;
     }
 
@@ -206,6 +210,7 @@ public class BotService extends Service implements Bot.Host {
     @Override public void onDestroy() {
         active = false;
         main.removeCallbacks(updateCheck);
+        main.removeCallbacks(limitCheck);
         if (modes != null) for (Mode m : modes) m.kill();
         try { if (panel != null) wm.removeView(panel); } catch (Exception ignored) { }
         try { if (strip != null) wm.removeView(strip); } catch (Exception ignored) { }
@@ -246,9 +251,70 @@ public class BotService extends Service implements Bot.Host {
         return haveFrame ? frame : null;
     }
 
+    private final Random rnd = new Random();
+
     @Override public boolean tap(float[] p) {
-        return TapService.tap(p[0] / Detect.REF_W * realW, p[1] / Detect.REF_H * realH);
+        float x = p[0], y = p[1];
+        if (Settings.tapJitter) {               // small random offset so taps aren't pixel-identical
+            x += (rnd.nextFloat() - 0.5f) * 14;
+            y += (rnd.nextFloat() - 0.5f) * 14;
+        }
+        return TapService.tap(x / Detect.REF_W * realW, y / Detect.REF_H * realH);
     }
+
+    // ---------------------------------------------------- session / alerts
+    private long sessionStartMs = 0;
+    private int sessionStartCount = 0;
+    private boolean wasRunning = false, userStopped = true;
+
+    private void startSession() {
+        sessionStartMs = System.currentTimeMillis();
+        sessionStartCount = current.status().catches;
+        userStopped = false;
+    }
+
+    /** Called on the main thread when the active mode stops without the user pressing pause. */
+    private void onAutoStop(String why) {
+        userStopped = true;
+        if (!Settings.alertOnPause) return;
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        NotificationChannel ch = new NotificationChannel("cf_alert", "Bot paused alerts",
+                NotificationManager.IMPORTANCE_HIGH);
+        ch.enableVibration(true);
+        nm.createNotificationChannel(ch);
+        Notification n = new Notification.Builder(this, "cf_alert")
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("Critter Fisher paused")
+                .setContentText(why)
+                .setAutoCancel(true)
+                .build();
+        nm.notify(2, n);
+    }
+
+    private final Runnable limitCheck = new Runnable() {
+        @Override public void run() {
+            Mode m = current;
+            if (m != null && m.isRunning() && sessionStartMs > 0) {
+                long mins = (System.currentTimeMillis() - sessionStartMs) / 60000;
+                int done = m.status().catches - sessionStartCount;
+                String why = null;
+                if (Settings.stopAfterMin > 0 && mins >= Settings.stopAfterMin) {
+                    why = "Time limit reached (" + Settings.stopAfterMin + " min)";
+                } else if (m == bot && Settings.stopAfterCatches > 0 && done >= Settings.stopAfterCatches) {
+                    why = "Catch limit reached (" + done + ")";
+                }
+                if (why != null) {
+                    m.setRunning(false);
+                    shown.running = false;
+                    shown.message = why;
+                    onAutoStop(why);
+                    refreshUi();
+                }
+            }
+            refreshUi();     // keeps the session clock ticking
+            main.postDelayed(this, 2000);
+        }
+    };
 
     @Override public void onStatus(Bot.Status s) {
         Mode cur = current;
@@ -266,6 +332,8 @@ public class BotService extends Service implements Bot.Host {
             shown.catches = c.catches; shown.fps = c.fps; shown.zoneL = c.zoneL;
             shown.zoneR = c.zoneR; shown.innerL = c.innerL; shown.innerR = c.innerR;
             shown.marker = c.marker; shown.tapX = c.tapX; shown.tapAtMs = c.tapAtMs;
+            if (wasRunning && !c.running && !userStopped) onAutoStop(c.message);
+            wasRunning = c.running;
             refreshUi();
         });
     }
@@ -325,10 +393,12 @@ public class BotService extends Service implements Bot.Host {
         modeBtn = button("🎣", 0xFF3A4660);
         TextView gear = button("⚙", 0xFF3A4660);
         TextView close = button("✕", 0xFF8A2D3A);
+        TextView mini = button("–", 0xFF3A4660);
         header.addView(title);
         header.addView(modeBtn);
         header.addView(playBtn);
         header.addView(gear);
+        header.addView(mini);
         header.addView(close);
         panel.addView(header);
 
@@ -383,7 +453,45 @@ public class BotService extends Service implements Bot.Host {
                 v -> Settings.pinballPopupWaitSec = v);
         pinballSettings.addView(text("Set the multiplier (x1/x5/...) in the game first. "
                 + "Popups and jackpot minigames pause the bot.", 11, 0xFF8FA0BD));
+        TextView calcOut = text("", 11, 0xFFDDE6FF);
+        TextView calcCur = button("Goal: " + PinballMath.NAMES[Settings.calcCurrency], 0xFF5B4BB0);
+        Runnable updCalc = () -> calcOut.setText(
+                PinballMath.describe(Settings.calcCurrency, Math.max(1, Settings.calcTarget)));
+        calcCur.setOnClickListener(v -> {
+            Settings.calcCurrency = (Settings.calcCurrency + 1) % PinballMath.NAMES.length;
+            calcCur.setText("Goal: " + PinballMath.NAMES[Settings.calcCurrency]);
+            Settings.save(this);
+            updCalc.run();
+        });
+        TextView calcHead = text("Pinball goal calculator", 12, 0xFFBFD4FF);
+        calcHead.setTypeface(Typeface.DEFAULT_BOLD);
+        calcHead.setPadding(0, dp(10), 0, 0);
+        pinballSettings.addView(calcHead);
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cl.topMargin = dp(4);
+        pinballSettings.addView(calcCur, cl);
+        addSlider("Target amount", "", 1, 3000, Settings.calcTarget, v -> {
+            Settings.calcTarget = v;
+            updCalc.run();
+        });
+        pinballSettings.addView(calcOut);
+        updCalc.run();
+
         target = settingsBox;
+        TextView gen = text("All modes", 12, 0xFFBFD4FF);
+        gen.setTypeface(Typeface.DEFAULT_BOLD);
+        gen.setPadding(0, dp(10), 0, 0);
+        settingsBox.addView(gen);
+        addSlider("Stop after (0 = never)", " min", 0, 480, Settings.stopAfterMin,
+                v -> Settings.stopAfterMin = v);
+        target = fishSettings;
+        addSlider("Fishing: stop after catches (0 = never)", "", 0, 1000, Settings.stopAfterCatches,
+                v -> Settings.stopAfterCatches = v);
+        target = settingsBox;
+        addCheck("Alert me when the bot pauses itself", Settings.alertOnPause,
+                v -> Settings.alertOnPause = v);
+        addCheck("Vary tap positions slightly", Settings.tapJitter, v -> Settings.tapJitter = v);
         panel.addView(settingsBox);
 
         playBtn.setOnClickListener(v -> {
@@ -393,6 +501,7 @@ public class BotService extends Service implements Bot.Host {
                 return;
             }
             Mode m = current;
+            if (!m.isRunning()) startSession(); else userStopped = true;
             m.setRunning(!m.isRunning());
             shown.running = m.isRunning();
             shown.message = m.isRunning() ? m.name() + " running" : "Paused";
@@ -400,11 +509,17 @@ public class BotService extends Service implements Bot.Host {
             if (!m.isRunning()) maybeInstallUpdate();
         });
         gear.setOnClickListener(v -> {
+            if (Settings.minimized) { Settings.minimized = false; applyMinimized(); }
             boolean open = settingsBox.getVisibility() != View.VISIBLE;
             settingsBox.setVisibility(open ? View.VISIBLE : View.GONE);
             if (!open) Settings.save(this);
         });
         close.setOnClickListener(v -> stopSelf());
+        mini.setOnClickListener(v -> {
+            Settings.minimized = !Settings.minimized;
+            Settings.save(this);
+            applyMinimized();
+        });
         modeBtn.setOnClickListener(v -> {
             int idx = 0;
             for (int k = 0; k < modes.length; k++) if (modes[k] == current) idx = k;
@@ -492,16 +607,33 @@ public class BotService extends Service implements Bot.Host {
         target.addView(cb);
     }
 
+    private void applyMinimized() {
+        boolean mini = Settings.minimized;
+        statusTv.setVisibility(mini ? View.GONE : View.VISIBLE);
+        if (mini) settingsBox.setVisibility(View.GONE);
+        boolean fishing = current == bot;
+        miniBar.setVisibility(!mini && fishing ? View.VISIBLE : View.GONE);
+    }
+
     private void refreshUi() {
         if (statusTv == null) return;
         playBtn.setText(shown.running ? "❚❚" : "▶");
         String tapState = TapService.instance == null ? "  [taps OFF]" : "";
         Mode m = current;
         String label = m == null ? "" : m.counterLabel();
-        statusTv.setText(String.format("b%d %s · %s · %s %d%s\n%s\n%s",
+        String session = "";
+        if (sessionStartMs > 0 && m != null) {
+            long secs = (System.currentTimeMillis() - sessionStartMs) / 1000;
+            int done = shown.catches - sessionStartCount;
+            double perHour = secs > 30 ? done * 3600.0 / secs : 0;
+            session = String.format("\n⏱ %d:%02d:%02d · this run %d (%.0f/h)",
+                    secs / 3600, secs / 60 % 60, secs % 60, done, perHour);
+            if (!shown.running) session += " · stopped";
+        }
+        statusTv.setText(String.format("b%d %s · %s · %s %d%s%s\n%s\n%s",
                 myBuild, m == null ? "" : m.name(),
                 shown.running ? shown.phase : "paused",
-                label, shown.catches, tapState, shown.bait, shown.message));
+                label, shown.catches, tapState, session, shown.bait, shown.message));
         miniBar.invalidate();
         strip.invalidate();
     }
