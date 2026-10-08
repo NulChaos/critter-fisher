@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.media.projection.MediaProjectionConfig;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
@@ -80,7 +79,7 @@ public class MainActivity extends Activity {
         startBtn = button("3. Start floating panel");
         startBtn.setOnClickListener(v -> startCapture());
         root.addView(startBtn);
-        root.addView(text("When asked, choose to share the ENTIRE screen. Then open the Fishing Contest and press ▶ on the panel. Keep the panel near the top of the screen so it doesn't cover the bar or buttons.",
+        root.addView(text("When Android asks what to share, pick \"A single app\" → Clash of Critters. The bot then sees only the game, never its own panel. (If your phone only offers the entire screen, keep the panel near the top.) Then open an event and the panel switches to it automatically.",
                 13, 0xFF8FA0BD));
 
         updateTv = text("Build " + Updater.currentBuild(this), 13, 0xFF8FA0BD);
@@ -161,9 +160,9 @@ public class MainActivity extends Activity {
         }
         if (BotService.active) stopService(new Intent(this, BotService.class));
         MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
-        Intent i = Build.VERSION.SDK_INT >= 34
-                ? mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-                : mpm.createScreenCaptureIntent();
+        // No config: on Android 14+ this lets you pick "A single app", which keeps
+        // the panel and markers out of what the bot sees.
+        Intent i = mpm.createScreenCaptureIntent();
         startActivityForResult(i, REQ_CAPTURE);
     }
 

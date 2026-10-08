@@ -57,6 +57,7 @@ public class BotService extends Service implements Bot.Host {
     private int realW, realH;
     private final Detect.Frame frame = new Detect.Frame();
     private boolean haveFrame = false;
+    private volatile long lastNewFrameNs = 0;
 
     // overlay views
     private LinearLayout panel;
@@ -309,6 +310,7 @@ public class BotService extends Service implements Bot.Host {
                     frame.stride = p.getRowStride();
                     frame.timeNs = img.getTimestamp();
                     haveFrame = true;
+                    lastNewFrameNs = System.nanoTime();
                     long nowNs = System.nanoTime();
                     boolean inMinigame = current == bot && bot.isRunning()
                             && bot.status().state == Detect.State.MINIGAME;
@@ -323,7 +325,11 @@ public class BotService extends Service implements Bot.Host {
             }
             try { Thread.sleep(2); } catch (InterruptedException e) { break; }
         } while (System.nanoTime() < end);
-        return haveFrame ? frame : null;
+        // Only hand out the cached frame while it's fresh. With single-app sharing the
+        // capture stops when the game is in the background, and acting on a stale frame
+        // would tap whatever app is on screen.
+        if (!haveFrame || System.nanoTime() - lastNewFrameNs > 2_500_000_000L) return null;
+        return frame;
     }
 
     private final Random rnd = new Random();

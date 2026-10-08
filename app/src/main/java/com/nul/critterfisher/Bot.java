@@ -233,7 +233,8 @@ public class Bot implements Mode {
         if (p == null) return -1;
         sleepMs(350);                              // let the rows finish appearing
         p = host.next(100);
-        int n = Detect.isLuckPopup(p) ? Detect.countBaitRows(p) : -1;
+        if (p == null || !Detect.isLuckPopup(p)) return -1;   // game not visible: tap nothing
+        int n = Detect.countBaitRows(p);
         tap(Detect.P_LUCK_CLOSE);                  // only tapped when the popup is confirmed open
         waitFor(State.IDLE, 2500);
         sleepMs(500);                              // closing animation
@@ -270,7 +271,8 @@ public class Bot implements Mode {
         if (p == null) return -1;
         if (!Detect.scatterAvailable(p)) {
             sleepMs(300);
-            p = host.next(60);
+            Frame again = host.next(60);
+            if (again != null) p = again;
         }
         if (!Detect.scatterAvailable(p)) {         // popup is open but no usable button
             tap(Detect.P_SAFE);
