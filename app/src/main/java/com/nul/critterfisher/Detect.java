@@ -14,12 +14,14 @@ public class Detect {
     public static final float[] P_BAG = {825, 1600};
     public static final float[] P_SCATTER = {610, 1350};
     public static final float[] P_SAFE = {460, 1050};
+    public static final float[] P_DISMISS = {300, 1560};   // below the catch card
+    public static final float[] P_CARD_L = {120, 950}, P_CARD_R = {800, 950};
     public static final float BAR_Y = 1463, BAR_X0 = 245, BAR_X1 = 705;
     public static final float MARKER_Y0 = 1400, MARKER_Y1 = 1510;
     public static final float[] CLOVER_BOX = {62, 1565, 130, 1637};
     public static final float STRIP_Y = 1520;   // where the on-screen markers are drawn
 
-    public enum State { IDLE, BAIT_POPUP, WAITING, REEL, HOOKED, MINIGAME, UNKNOWN }
+    public enum State { IDLE, BAIT_POPUP, WAITING, REEL, HOOKED, MINIGAME, CATCH, UNKNOWN }
 
     /** A captured frame: RGBA bytes with row stride. */
     public static class Frame {
@@ -128,8 +130,12 @@ public class Detect {
         return union == 0 || inter / (float) union > 0.85f;
     }
 
+    static boolean isCardPurple(int[] c) { return c[0] > 100 && c[0] < 190 && c[1] < 40 && c[2] > 180; }
+
     public static State stateOf(Frame f, Bar[] barOut) {
         int[] btn = patch(f, P_BTN_SAMPLE);
+        if (isCardPurple(patch(f, P_CARD_L)) && isCardPurple(patch(f, P_CARD_R))
+                && btn[0] < 110 && btn[1] < 60) return State.CATCH;
         if (isGreen(patch(f, P_SCATTER)) && isGreen(btn)) return State.BAIT_POPUP;
         if (isGreen(btn)) return State.IDLE;
         if (isGrey(btn)) return State.WAITING;

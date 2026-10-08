@@ -21,7 +21,7 @@ public class Bot implements Runnable {
     public static class Status {
         public State state = State.UNKNOWN;
         public boolean running;
-        public String message = "";
+        public String message = "", bait = "";
         public int catches, fps;
         public float zoneL = -1, zoneR = -1, innerL, innerR, marker = -1, tapX = -1;
         public long tapAtMs;
@@ -30,11 +30,13 @@ public class Bot implements Runnable {
     private final Host host;
     public volatile boolean running = false;
     public volatile boolean alive = true;
+    /** Set from the panel to try bait on the next idle screen. */
+    public volatile boolean forceBait = false;
 
     private final Tracker tracker = new Tracker();
     private final Status st = new Status();
     private double lastTap = 0, baitPauseUntil = 0, frameDt = 0.03;
-    private double unknownSince = -1, lastStatus = 0;
+    private double unknownSince = -1, lastStatus = 0, catchSince = -1, lastCatchTap = 0;
     private int unknownTaps = 0, castsWithoutProgress = 0, frames = 0;
     private double fpsWindow = 0;
     private long lastFrameNs = 0;
@@ -99,12 +101,14 @@ public class Bot implements Runnable {
             State s = Detect.stateOf(f, bo);
             st.state = s;
             if (s != State.UNKNOWN) { unknownSince = -1; unknownTaps = 0; }
+            if (s != State.CATCH) catchSince = -1;
+            updateBaitInfo(t);
             if (s != State.MINIGAME) { tracker.reset(); st.zoneL = -1; st.marker = -1; }
 
             switch (s) {
                 case IDLE:
                     if (prev == State.MINIGAME || prev == State.REEL || prev == State.HOOKED
-                            || prev == State.UNKNOWN) {
+                            || prev == State.UNKNOWN || prev == State.CATCH) {
                         st.catches++;
                         msg("Catch #" + st.catches);
                     }
@@ -128,6 +132,13 @@ public class Bot implements Runnable {
                     break;
                 case HOOKED:
                     break;
+                case CATCH:
+                    if (catchSince < 0) catchSince = t;
+                    if (t - catchSince > 0.7 && t - lastCatchTap > 0.8) {
+                        tap(Detect.P_DISMISS);
+                        lastCatchTap = t;
+                    }
+                    break;
                 default:
                     if (unknownSince < 0) unknownSince = t;
                     else if (t - unknownSince > 1.5) {
@@ -135,7 +146,7 @@ public class Bot implements Runnable {
                             running = false;
                             msg("Stuck on an unknown screen - paused");
                         } else {
-                            tap(Detect.P_SAFE);       // dismiss the catch popup
+                            tap(Detect.P_DISMISS);    // dismiss whatever popup this is
                             unknownTaps++;
                             unknownSince = now();
                         }
@@ -147,7 +158,8 @@ public class Bot implements Runnable {
     }
 
     private void handleIdle(Frame f) {
-        if (Settings.useBait && now() > baitPauseUntil) {
+        if (forceBait || (Settings.useBait && now() > baitPauseUntil)) {
+            forceBait = false;
             tryScatter(f);
             return;
         }
@@ -162,14 +174,28 @@ public class Bot implements Runnable {
         sleepMs(1000);
     }
 
+    private String baitReason = "ready";
+
+    private void updateBaitInfo(double t) {
+        if (!Settings.useBait) st.bait = "bait: off";
+        else if (t < baitPauseUntil) {
+            int left = (int) (baitPauseUntil - t);
+            st.bait = String.format("bait: %s, retry in %d:%02d", baitReason, left / 60, left % 60);
+        } else st.bait = "bait: ready (used on next idle screen)";
+    }
+
     private void tryScatter(Frame f) {
+        st.bait = "bait: opening bag...";
+        push(true);
         boolean[] before = Detect.cloverMask(f);
-        if (!tap(Detect.P_BAG)) { baitPauseUntil = now() + 5; return; }
+        if (!tap(Detect.P_BAG)) { baitPauseUntil = now() + 5; baitReason = "tap service off"; return; }
         sleepMs(800);
         Frame pop = host.next(200);
         if (pop == null || !Detect.isGreen(Detect.patch(pop, Detect.P_SCATTER))) {
             baitPauseUntil = now() + 300;
-            msg("No bait left - rechecking in 5 min");
+            baitReason = "no bait / button not found";
+            int[] c = pop == null ? new int[3] : Detect.patch(pop, Detect.P_SCATTER);
+            msg(String.format("Scatter button not seen (color %d,%d,%d)", c[0], c[1], c[2]));
             tap(Detect.P_SAFE);
             sleepMs(600);
             return;
@@ -182,7 +208,8 @@ public class Bot implements Runnable {
         if (after == null) return;
         if (Detect.sameMask(before, Detect.cloverMask(after))) {
             baitPauseUntil = now() + Settings.baitRecheckSec;
-            msg("Luck at limit - bait paused " + Settings.baitRecheckSec + "s");
+            baitReason = "luck didn't change (limit?)";
+            msg("Tapped Scatter Bait, luck number didn't change");
         } else {
             msg("Scattered bait - luck up");
         }

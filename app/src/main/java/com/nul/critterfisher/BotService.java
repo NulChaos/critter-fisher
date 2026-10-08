@@ -183,12 +183,13 @@ public class BotService extends Service implements Bot.Host {
 
     @Override public void onStatus(Bot.Status s) {
         final Bot.Status c = new Bot.Status();
-        c.state = s.state; c.running = s.running; c.message = s.message;
+        c.state = s.state; c.running = s.running; c.message = s.message; c.bait = s.bait;
         c.catches = s.catches; c.fps = s.fps; c.zoneL = s.zoneL; c.zoneR = s.zoneR;
         c.innerL = s.innerL; c.innerR = s.innerR; c.marker = s.marker; c.tapX = s.tapX;
         c.tapAtMs = s.tapAtMs;
         main.post(() -> {
             shown.state = c.state; shown.running = c.running; shown.message = c.message;
+            shown.bait = c.bait;
             shown.catches = c.catches; shown.fps = c.fps; shown.zoneL = c.zoneL;
             shown.zoneR = c.zoneR; shown.innerL = c.innerL; shown.innerR = c.innerR;
             shown.marker = c.marker; shown.tapX = c.tapX; shown.tapAtMs = c.tapAtMs;
@@ -280,6 +281,16 @@ public class BotService extends Service implements Bot.Host {
             Settings.showMarkers = v;
             strip.invalidate();
         });
+        TextView baitNow = button("Try bait now", 0xFF5B4BB0);
+        baitNow.setOnClickListener(v -> {
+            bot.forceBait = true;
+            shown.message = "Will try bait on the next idle screen";
+            refreshUi();
+        });
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bl.topMargin = dp(8);
+        settingsBox.addView(baitNow, bl);
         panel.addView(settingsBox);
 
         playBtn.setOnClickListener(v -> {
@@ -383,9 +394,9 @@ public class BotService extends Service implements Bot.Host {
         if (statusTv == null) return;
         playBtn.setText(shown.running ? "❚❚" : "▶");
         String tapState = TapService.instance == null ? "  [taps OFF]" : "";
-        statusTv.setText(String.format("%s · %dfps · catches %d%s\n%s",
+        statusTv.setText(String.format("%s · %dfps · catches %d%s\n%s\n%s",
                 shown.running ? shown.state.name().toLowerCase() : "paused",
-                shown.fps, shown.catches, tapState, shown.message));
+                shown.fps, shown.catches, tapState, shown.bait, shown.message));
         miniBar.invalidate();
         strip.invalidate();
     }
