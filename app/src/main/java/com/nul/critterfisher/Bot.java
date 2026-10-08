@@ -37,6 +37,7 @@ public class Bot implements Mode {
     private final Status st = new Status();
     private double lastTap = 0, baitPauseUntil = 0, frameDt = 0.03;
     private double unknownSince = -1, lastStatus = 0, catchSince = -1, lastCatchTap = 0;
+    private double lastKnownT = now();
     private int unknownTaps = 0, castsWithoutProgress = 0, frames = 0;
     private double fpsWindow = 0;
     private long lastFrameNs = 0;
@@ -47,7 +48,10 @@ public class Bot implements Mode {
     @Override public String name() { return "Fishing"; }
     @Override public String counterLabel() { return "catches"; }
     @Override public boolean isRunning() { return running; }
-    @Override public void setRunning(boolean r) { running = r; }
+    @Override public void setRunning(boolean r) {
+        if (r) lastKnownT = now();
+        running = r;
+    }
     @Override public void kill() { alive = false; running = false; }
     @Override public Status status() { return st; }
 
@@ -108,7 +112,7 @@ public class Bot implements Mode {
             State s = Detect.stateOf(f, bo);
             st.state = s;
             st.phase = s.name().toLowerCase();
-            if (s != State.UNKNOWN) { unknownSince = -1; unknownTaps = 0; }
+            if (s != State.UNKNOWN) { unknownSince = -1; unknownTaps = 0; lastKnownT = t; }
             if (s != State.CATCH) catchSince = -1;
             updateBaitInfo(t);
             if (s != State.MINIGAME) { tracker.reset(); st.zoneL = -1; st.marker = -1; }
@@ -152,6 +156,11 @@ public class Bot implements Mode {
                     }
                     break;
                 default:
+                    if (t - lastKnownT > 6) {          // not a post-catch popup: we left the contest
+                        running = false;
+                        msg("Left the Fishing Contest - paused");
+                        break;
+                    }
                     if (unknownSince < 0) unknownSince = t;
                     else if (t - unknownSince > 1.5) {
                         if (unknownTaps >= 8) {

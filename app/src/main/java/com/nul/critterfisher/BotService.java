@@ -65,9 +65,70 @@ public class BotService extends Service implements Bot.Host {
     private PinballBot pinball;
     private Mode[] modes;
     private volatile Mode current;
-    private LinearLayout fishSettings, pinballSettings;
+    private LinearLayout fishSettings, pinballSettings, goldrushSettings;
 
-    private static final String[] MODE_ICONS = {"🎣", "🎱"};
+    private static final String[] MODE_ICONS = {"🎣", "🎱", "🏝"};
+    private GoldrushMode goldrush;
+
+    // ------------------------------------------------- automatic mode switching
+    private volatile Detect.Screen lastScreen = Detect.Screen.OTHER;
+    private volatile long lastDetectNs = 0;
+    private Detect.Screen candidate = Detect.Screen.OTHER, manualOverrideScreen = null;
+    private long candidateSince = 0;
+
+    private static int modeFor(Detect.Screen s) {
+        switch (s) {
+            case FISHING: return 0;
+            case PINBALL: return 1;
+            case GOLDRUSH: return 2;
+            default: return -1;
+        }
+    }
+
+    private int currentIndex() {
+        for (int k = 0; k < modes.length; k++) if (modes[k] == current) return k;
+        return 0;
+    }
+
+    /** Runs on the main thread twice a second. */
+    private final Runnable autoSwitchCheck = new Runnable() {
+        @Override public void run() {
+            main.postDelayed(this, 500);
+            if (!Settings.autoSwitch || modes == null) return;
+            Detect.Screen s = lastScreen;
+            long now = System.currentTimeMillis();
+            if (s != candidate) { candidate = s; candidateSince = now; return; }
+            if (now - candidateSince < 1000) return;           // must be stable for 1 s
+            if (manualOverrideScreen != null) {
+                if (s == manualOverrideScreen) return;          // user picked a mode here
+                manualOverrideScreen = null;
+            }
+            int want = modeFor(s);
+            if (want < 0 || want == currentIndex()) return;
+            boolean wasRunning = current.isRunning();
+            selectMode(want);
+            if (want == 2 || (Settings.autoStart && wasRunning)) {
+                startSession();
+                current.setRunning(true);
+                shown.running = true;
+            }
+            shown.message = "Auto-switched to " + current.name();
+            refreshUi();
+        }
+    };
+
+    /** When no mode is reading the screen, this keeps screen detection going. */
+    private void startWatcher() {
+        Thread w = new Thread(() -> {
+            while (active) {
+                Mode m = current;
+                if (m == null || !m.isRunning()) next(100);
+                try { Thread.sleep(400); } catch (InterruptedException e) { return; }
+            }
+        }, "screen-watch");
+        w.setDaemon(true);
+        w.start();
+    }
 
     private void selectMode(int i) {
         if (modes == null) return;
@@ -84,12 +145,14 @@ public class BotService extends Service implements Bot.Host {
         shown.zoneL = -1;
         shown.marker = -1;
         shown.message = i == 0 ? "Fishing: open the Fishing Contest, then press ▶"
-                : "Pinball: open the Goldrush tab, then press ▶";
+                : i == 1 ? "Pinball: open the Goldrush tab, then press ▶"
+                : "Goldrush advisor: open the Island Goldrush map";
         if (modeBtn != null) {
             modeBtn.setText(MODE_ICONS[i]);
             miniBar.setVisibility(i == 0 && !Settings.minimized ? View.VISIBLE : View.GONE);
             fishSettings.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
             pinballSettings.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
+            goldrushSettings.setVisibility(i == 2 ? View.VISIBLE : View.GONE);
         }
         refreshUi();
     }
@@ -174,12 +237,16 @@ public class BotService extends Service implements Bot.Host {
         pinball = new PinballBot(this);
         Thread pt = new Thread(pinball, "pinball");
         pt.start();
-        modes = new Mode[]{bot, pinball};
+        goldrush = new GoldrushMode(this);
+        new Thread(goldrush, "goldrush").start();
+        modes = new Mode[]{bot, pinball, goldrush};
         selectMode(Settings.mode);
         applyMinimized();
         refreshUi();
         main.postDelayed(updateCheck, 3000);
         main.postDelayed(limitCheck, 2000);
+        main.postDelayed(autoSwitchCheck, 1500);
+        startWatcher();
         return START_NOT_STICKY;
     }
 
@@ -211,6 +278,7 @@ public class BotService extends Service implements Bot.Host {
         active = false;
         main.removeCallbacks(updateCheck);
         main.removeCallbacks(limitCheck);
+        main.removeCallbacks(autoSwitchCheck);
         if (modes != null) for (Mode m : modes) m.kill();
         try { if (panel != null) wm.removeView(panel); } catch (Exception ignored) { }
         try { if (strip != null) wm.removeView(strip); } catch (Exception ignored) { }
@@ -241,6 +309,13 @@ public class BotService extends Service implements Bot.Host {
                     frame.stride = p.getRowStride();
                     frame.timeNs = img.getTimestamp();
                     haveFrame = true;
+                    long nowNs = System.nanoTime();
+                    boolean inMinigame = current == bot && bot.isRunning()
+                            && bot.status().state == Detect.State.MINIGAME;
+                    if (!inMinigame && nowNs - lastDetectNs > 400_000_000L) {
+                        lastDetectNs = nowNs;
+                        lastScreen = Detect.screenOf(frame);
+                    }
                 } finally {
                     img.close();
                 }
@@ -417,8 +492,14 @@ public class BotService extends Service implements Bot.Host {
         fishSettings.setOrientation(LinearLayout.VERTICAL);
         pinballSettings = new LinearLayout(this);
         pinballSettings.setOrientation(LinearLayout.VERTICAL);
+        goldrushSettings = new LinearLayout(this);
+        goldrushSettings.setOrientation(LinearLayout.VERTICAL);
         settingsBox.addView(fishSettings);
         settingsBox.addView(pinballSettings);
+        settingsBox.addView(goldrushSettings);
+        StringBuilder gtips = new StringBuilder("Goldrush advisor (read-only, never taps)\n");
+        for (String tipText : GoldrushMode.TIPS) gtips.append("• ").append(tipText).append('\n');
+        goldrushSettings.addView(text(gtips.toString(), 11, 0xFFDDE6FF));
         target = fishSettings;
         addSlider("Tap timing (latency)", "ms", 0, 300, Settings.tapLatencyMs,
                 v -> Settings.tapLatencyMs = v);
@@ -492,6 +573,10 @@ public class BotService extends Service implements Bot.Host {
         addCheck("Alert me when the bot pauses itself", Settings.alertOnPause,
                 v -> Settings.alertOnPause = v);
         addCheck("Vary tap positions slightly", Settings.tapJitter, v -> Settings.tapJitter = v);
+        addCheck("Switch mode automatically by screen", Settings.autoSwitch,
+                v -> Settings.autoSwitch = v);
+        addCheck("Keep running after an auto-switch", Settings.autoStart,
+                v -> Settings.autoStart = v);
         panel.addView(settingsBox);
 
         playBtn.setOnClickListener(v -> {
@@ -521,9 +606,8 @@ public class BotService extends Service implements Bot.Host {
             applyMinimized();
         });
         modeBtn.setOnClickListener(v -> {
-            int idx = 0;
-            for (int k = 0; k < modes.length; k++) if (modes[k] == current) idx = k;
-            selectMode((idx + 1) % modes.length);
+            manualOverrideScreen = lastScreen;
+            selectMode((currentIndex() + 1) % modes.length);
         });
 
         panelLp = new WindowManager.LayoutParams(

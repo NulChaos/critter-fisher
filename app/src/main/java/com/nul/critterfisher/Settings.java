@@ -20,6 +20,8 @@ public class Settings {
     public static volatile boolean alertOnPause = true;
     public static volatile boolean tapJitter = true;
     public static volatile boolean minimized = false;
+    public static volatile boolean autoSwitch = true;
+    public static volatile boolean autoStart = false;
     public static volatile int calcCurrency = 2, calcTarget = 100;                  // 0 fishing, 1 pinball
 
     public static void load(Context c) {
@@ -39,6 +41,8 @@ public class Settings {
         alertOnPause = p.getBoolean("alert", alertOnPause);
         tapJitter = p.getBoolean("jitter", tapJitter);
         minimized = p.getBoolean("mini", minimized);
+        autoSwitch = p.getBoolean("autoSw", autoSwitch);
+        autoStart = p.getBoolean("autoSt", autoStart);
         calcCurrency = p.getInt("calcCur", calcCurrency);
         calcTarget = p.getInt("calcN", calcTarget);
     }
@@ -52,7 +56,8 @@ public class Settings {
                 .putInt("pbWait", pinballPopupWaitSec).putInt("mode", mode)
                 .putInt("stopMin", stopAfterMin).putInt("stopN", stopAfterCatches)
                 .putBoolean("alert", alertOnPause).putBoolean("jitter", tapJitter)
-                .putBoolean("mini", minimized).putInt("calcCur", calcCurrency)
+                .putBoolean("mini", minimized).putBoolean("autoSw", autoSwitch)
+                .putBoolean("autoSt", autoStart).putInt("calcCur", calcCurrency)
                 .putInt("calcN", calcTarget).apply();
     }
 }

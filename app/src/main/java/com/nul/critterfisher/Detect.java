@@ -173,6 +173,56 @@ public class Detect {
                 && tab[0] > 180 && tab[1] > 220 && tab[2] > 220;
     }
 
+    // ------------------------------------------------------------ Goldrush map
+    /** Faction colours on the Island Goldrush map: blue, yellow, red, purple. */
+    public static final int[][] FACTION_RGB = {{40, 160, 252}, {243, 212, 37}, {215, 68, 84}, {218, 118, 248}};
+    public static final String[] FACTION_NAMES = {"Blue", "Yellow", "Red", "Purple"};
+
+    /** Share of each faction colour in the map area (index 4 = total coverage of the area). */
+    public static float[] factionShares(Frame f) {
+        int[] n = new int[4];
+        int total = 0;
+        int step = Math.max(1, f.w / 270);
+        for (int y = f.sy(330); y < f.sy(1650); y += step) {
+            for (int x = 0; x < f.w; x += step) {
+                total++;
+                int r = f.r(x, y), g = f.g(x, y), b = f.b(x, y), best = -1, bd = 55 * 55;
+                for (int i = 0; i < 4; i++) {
+                    int dr = r - FACTION_RGB[i][0], dg = g - FACTION_RGB[i][1], db = b - FACTION_RGB[i][2];
+                    int d = dr * dr + dg * dg + db * db;
+                    if (d < bd) { bd = d; best = i; }
+                }
+                if (best >= 0) n[best]++;
+            }
+        }
+        int owned = n[0] + n[1] + n[2] + n[3];
+        float[] out = new float[5];
+        for (int i = 0; i < 4; i++) out[i] = owned == 0 ? 0 : n[i] / (float) owned;
+        out[4] = total == 0 ? 0 : owned / (float) total;
+        return out;
+    }
+
+    /** Island Goldrush map: dark top bar plus mostly faction-coloured territory. */
+    public static boolean isGoldrushMap(Frame f) {
+        int[] top = patch(f, new float[]{700, 60});
+        if (top[0] > 90 || top[1] > 90 || top[2] > 110) return false;
+        float[] s = factionShares(f);
+        int present = 0;
+        for (int i = 0; i < 4; i++) if (s[i] > 0.04f) present++;
+        return s[4] > 0.30f && present >= 2;
+    }
+
+    public enum Screen { FISHING, PINBALL, GOLDRUSH, OTHER }
+
+    /** Which game screen is showing (used for automatic mode switching). */
+    public static Screen screenOf(Frame f) {
+        if (isPinballScreen(f)) return Screen.PINBALL;
+        if (isGoldrushMap(f)) return Screen.GOLDRUSH;   // before fishing: map colours can fool it
+        State s = stateOf(f, null);
+        if (s != State.UNKNOWN) return Screen.FISHING;
+        return Screen.OTHER;
+    }
+
     static boolean isWhite(int[] c) { return c[0] > 225 && c[1] > 225 && c[2] > 215; }
 
     public static boolean isLuckPopup(Frame f) {
