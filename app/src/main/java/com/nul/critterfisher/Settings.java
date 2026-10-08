@@ -11,6 +11,10 @@ public class Settings {
     public static volatile int baitRecheckSec = 90;
     public static volatile boolean showMarkers = true;
     public static volatile int reelTapMs = 100;
+    public static volatile int pinballLaunches = 100;     // 0 = no limit
+    public static volatile int pinballIntervalMs = 1200;
+    public static volatile int pinballPopupWaitSec = 8;
+    public static volatile int mode = 0;                  // 0 fishing, 1 pinball
 
     public static void load(Context c) {
         SharedPreferences p = c.getSharedPreferences("cf", Context.MODE_PRIVATE);
@@ -20,12 +24,18 @@ public class Settings {
         baitRecheckSec = p.getInt("recheck", baitRecheckSec);
         showMarkers = p.getBoolean("markers", showMarkers);
         reelTapMs = p.getInt("reel", reelTapMs);
+        pinballLaunches = p.getInt("pbN", pinballLaunches);
+        pinballIntervalMs = p.getInt("pbMs", pinballIntervalMs);
+        pinballPopupWaitSec = p.getInt("pbWait", pinballPopupWaitSec);
+        mode = p.getInt("mode", mode);
     }
 
     public static void save(Context c) {
         c.getSharedPreferences("cf", Context.MODE_PRIVATE).edit()
                 .putInt("lat", tapLatencyMs).putInt("inset", aimInsetPct)
                 .putBoolean("bait", useBait).putInt("recheck", baitRecheckSec)
-                .putBoolean("markers", showMarkers).putInt("reel", reelTapMs).apply();
+                .putBoolean("markers", showMarkers).putInt("reel", reelTapMs)
+                .putInt("pbN", pinballLaunches).putInt("pbMs", pinballIntervalMs)
+                .putInt("pbWait", pinballPopupWaitSec).putInt("mode", mode).apply();
     }
 }

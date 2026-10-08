@@ -60,7 +60,37 @@ public class BotService extends Service implements Bot.Host {
     // overlay views
     private LinearLayout panel;
     private WindowManager.LayoutParams panelLp;
-    private TextView statusTv, playBtn;
+    private TextView statusTv, playBtn, modeBtn;
+    private PinballBot pinball;
+    private Mode[] modes;
+    private volatile Mode current;
+    private LinearLayout fishSettings, pinballSettings;
+
+    private static final String[] MODE_ICONS = {"🎣", "🎱"};
+
+    private void selectMode(int i) {
+        if (modes == null) return;
+        i = Math.max(0, Math.min(modes.length - 1, i));
+        if (current != null) current.setRunning(false);
+        current = modes[i];
+        Settings.mode = i;
+        Settings.save(this);
+        shown.running = false;
+        shown.phase = "paused";
+        shown.bait = current.status().bait;
+        shown.catches = current.status().catches;
+        shown.zoneL = -1;
+        shown.marker = -1;
+        shown.message = i == 0 ? "Fishing: open the Fishing Contest, then press ▶"
+                : "Pinball: open the Goldrush tab, then press ▶";
+        if (modeBtn != null) {
+            modeBtn.setText(MODE_ICONS[i]);
+            miniBar.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+            fishSettings.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+            pinballSettings.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
+        }
+        refreshUi();
+    }
     private BarView miniBar, strip;
     private LinearLayout settingsBox;
     private final Bot.Status shown = new Bot.Status();
@@ -82,7 +112,7 @@ public class BotService extends Service implements Bot.Host {
     /** Installs a waiting update, but never while the bot is running. */
     private void maybeInstallUpdate() {
         if (pendingApk == null) return;
-        if (bot != null && bot.running) {
+        if (current != null && current.isRunning()) {
             shown.message = "Build " + pendingBuild + " ready - installs when you pause";
             refreshUi();
             return;
@@ -139,7 +169,11 @@ public class BotService extends Service implements Bot.Host {
         botThread = new Thread(bot, "bot");
         botThread.setPriority(Thread.MAX_PRIORITY);
         botThread.start();
-        shown.message = "Open the Fishing Contest, then press ▶";
+        pinball = new PinballBot(this);
+        Thread pt = new Thread(pinball, "pinball");
+        pt.start();
+        modes = new Mode[]{bot, pinball};
+        selectMode(Settings.mode);
         refreshUi();
         main.postDelayed(updateCheck, 3000);
         return START_NOT_STICKY;
@@ -172,7 +206,7 @@ public class BotService extends Service implements Bot.Host {
     @Override public void onDestroy() {
         active = false;
         main.removeCallbacks(updateCheck);
-        if (bot != null) { bot.alive = false; bot.running = false; }
+        if (modes != null) for (Mode m : modes) m.kill();
         try { if (panel != null) wm.removeView(panel); } catch (Exception ignored) { }
         try { if (strip != null) wm.removeView(strip); } catch (Exception ignored) { }
         if (vd != null) vd.release();
@@ -217,7 +251,10 @@ public class BotService extends Service implements Bot.Host {
     }
 
     @Override public void onStatus(Bot.Status s) {
+        Mode cur = current;
+        if (cur == null || s != cur.status()) return;      // only the active mode drives the UI
         final Bot.Status c = new Bot.Status();
+        c.phase = s.phase;
         c.state = s.state; c.running = s.running; c.message = s.message; c.bait = s.bait;
         c.catches = s.catches; c.fps = s.fps; c.zoneL = s.zoneL; c.zoneR = s.zoneR;
         c.innerL = s.innerL; c.innerR = s.innerR; c.marker = s.marker; c.tapX = s.tapX;
@@ -225,6 +262,7 @@ public class BotService extends Service implements Bot.Host {
         main.post(() -> {
             shown.state = c.state; shown.running = c.running; shown.message = c.message;
             shown.bait = c.bait;
+            shown.phase = c.phase;
             shown.catches = c.catches; shown.fps = c.fps; shown.zoneL = c.zoneL;
             shown.zoneR = c.zoneR; shown.innerL = c.innerL; shown.innerR = c.innerR;
             shown.marker = c.marker; shown.tapX = c.tapX; shown.tapAtMs = c.tapAtMs;
@@ -284,9 +322,11 @@ public class BotService extends Service implements Bot.Host {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, dp(4), dp(4), dp(4));
         playBtn = button("▶", 0xFF2E9E4F);
+        modeBtn = button("🎣", 0xFF3A4660);
         TextView gear = button("⚙", 0xFF3A4660);
         TextView close = button("✕", 0xFF8A2D3A);
         header.addView(title);
+        header.addView(modeBtn);
         header.addView(playBtn);
         header.addView(gear);
         header.addView(close);
@@ -303,6 +343,13 @@ public class BotService extends Service implements Bot.Host {
         settingsBox = new LinearLayout(this);
         settingsBox.setOrientation(LinearLayout.VERTICAL);
         settingsBox.setVisibility(View.GONE);
+        fishSettings = new LinearLayout(this);
+        fishSettings.setOrientation(LinearLayout.VERTICAL);
+        pinballSettings = new LinearLayout(this);
+        pinballSettings.setOrientation(LinearLayout.VERTICAL);
+        settingsBox.addView(fishSettings);
+        settingsBox.addView(pinballSettings);
+        target = fishSettings;
         addSlider("Tap timing (latency)", "ms", 0, 300, Settings.tapLatencyMs,
                 v -> Settings.tapLatencyMs = v);
         addSlider("Aim: stay off zone edges", "%", 0, 45, Settings.aimInsetPct,
@@ -325,7 +372,18 @@ public class BotService extends Service implements Bot.Host {
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         bl.topMargin = dp(8);
-        settingsBox.addView(baitNow, bl);
+        fishSettings.addView(baitNow, bl);
+
+        target = pinballSettings;
+        addSlider("Launches per batch (0 = no limit)", "", 0, 2000, Settings.pinballLaunches,
+                v -> { Settings.pinballLaunches = v; });
+        addSlider("Time between launches", "ms", 300, 4000, Settings.pinballIntervalMs,
+                v -> Settings.pinballIntervalMs = v);
+        addSlider("Pause if off the pinball screen for", "s", 2, 60, Settings.pinballPopupWaitSec,
+                v -> Settings.pinballPopupWaitSec = v);
+        pinballSettings.addView(text("Set the multiplier (x1/x5/...) in the game first. "
+                + "Popups and jackpot minigames pause the bot.", 11, 0xFF8FA0BD));
+        target = settingsBox;
         panel.addView(settingsBox);
 
         playBtn.setOnClickListener(v -> {
@@ -334,11 +392,12 @@ public class BotService extends Service implements Bot.Host {
                 refreshUi();
                 return;
             }
-            bot.running = !bot.running;
-            shown.running = bot.running;
-            shown.message = bot.running ? "Running" : "Paused";
+            Mode m = current;
+            m.setRunning(!m.isRunning());
+            shown.running = m.isRunning();
+            shown.message = m.isRunning() ? m.name() + " running" : "Paused";
             refreshUi();
-            if (!bot.running) maybeInstallUpdate();
+            if (!m.isRunning()) maybeInstallUpdate();
         });
         gear.setOnClickListener(v -> {
             boolean open = settingsBox.getVisibility() != View.VISIBLE;
@@ -346,6 +405,11 @@ public class BotService extends Service implements Bot.Host {
             if (!open) Settings.save(this);
         });
         close.setOnClickListener(v -> stopSelf());
+        modeBtn.setOnClickListener(v -> {
+            int idx = 0;
+            for (int k = 0; k < modes.length; k++) if (modes[k] == current) idx = k;
+            selectMode((idx + 1) % modes.length);
+        });
 
         panelLp = new WindowManager.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -395,6 +459,8 @@ public class BotService extends Service implements Bot.Host {
         wm.addView(strip, sl);
     }
 
+    private LinearLayout target;     // where addSlider/addCheck put their views
+
     interface IntSetter { void set(int v); }
     interface BoolSetter { void set(boolean v); }
 
@@ -412,8 +478,8 @@ public class BotService extends Service implements Bot.Host {
             @Override public void onStartTrackingTouch(SeekBar b) { }
             @Override public void onStopTrackingTouch(SeekBar b) { Settings.save(BotService.this); }
         });
-        settingsBox.addView(tv);
-        settingsBox.addView(sb, new LinearLayout.LayoutParams(dp(250), dp(32)));
+        target.addView(tv);
+        target.addView(sb, new LinearLayout.LayoutParams(dp(250), dp(32)));
     }
 
     private void addCheck(String label, boolean value, BoolSetter s) {
@@ -423,17 +489,19 @@ public class BotService extends Service implements Bot.Host {
         cb.setTextSize(12);
         cb.setChecked(value);
         cb.setOnCheckedChangeListener((b, v) -> { s.set(v); Settings.save(this); });
-        settingsBox.addView(cb);
+        target.addView(cb);
     }
 
     private void refreshUi() {
         if (statusTv == null) return;
         playBtn.setText(shown.running ? "❚❚" : "▶");
         String tapState = TapService.instance == null ? "  [taps OFF]" : "";
-        statusTv.setText(String.format("b%d %s · %dfps · catches %d%s\n%s\n%s",
-                myBuild,
-                shown.running ? shown.state.name().toLowerCase() : "paused",
-                shown.fps, shown.catches, tapState, shown.bait, shown.message));
+        Mode m = current;
+        String label = m == null ? "" : m.counterLabel();
+        statusTv.setText(String.format("b%d %s · %s · %s %d%s\n%s\n%s",
+                myBuild, m == null ? "" : m.name(),
+                shown.running ? shown.phase : "paused",
+                label, shown.catches, tapState, shown.bait, shown.message));
         miniBar.invalidate();
         strip.invalidate();
     }

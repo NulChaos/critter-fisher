@@ -7,7 +7,7 @@ import com.nul.critterfisher.Detect.State;
 import java.util.concurrent.locks.LockSupport;
 
 /** The fishing loop. Runs on its own thread. */
-public class Bot implements Runnable {
+public class Bot implements Mode {
 
     public interface Host {
         /** Newest frame, waiting up to timeoutMs for one newer than the last returned. */
@@ -21,7 +21,7 @@ public class Bot implements Runnable {
     public static class Status {
         public State state = State.UNKNOWN;
         public boolean running;
-        public String message = "", bait = "";
+        public String message = "", bait = "", phase = "";
         public int catches, fps;
         public float zoneL = -1, zoneR = -1, innerL, innerR, marker = -1, tapX = -1;
         public long tapAtMs;
@@ -43,6 +43,13 @@ public class Bot implements Runnable {
     private State prev = null;
 
     public Bot(Host host) { this.host = host; }
+
+    @Override public String name() { return "Fishing"; }
+    @Override public String counterLabel() { return "catches"; }
+    @Override public boolean isRunning() { return running; }
+    @Override public void setRunning(boolean r) { running = r; }
+    @Override public void kill() { alive = false; running = false; }
+    @Override public Status status() { return st; }
 
     static double now() { return System.nanoTime() / 1e9; }
 
@@ -100,6 +107,7 @@ public class Bot implements Runnable {
             Bar[] bo = new Bar[1];
             State s = Detect.stateOf(f, bo);
             st.state = s;
+            st.phase = s.name().toLowerCase();
             if (s != State.UNKNOWN) { unknownSince = -1; unknownTaps = 0; }
             if (s != State.CATCH) catchSince = -1;
             updateBaitInfo(t);

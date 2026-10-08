@@ -23,7 +23,8 @@ public class Detect {
     public static final float BAR_Y = 1463, BAR_X0 = 245, BAR_X1 = 705;
     public static final float MARKER_Y0 = 1400, MARKER_Y1 = 1510;
     public static final float[] CLOVER_BOX = {62, 1565, 130, 1637};
-    public static final float STRIP_Y = 1520;   // where the on-screen markers are drawn
+    public static final float STRIP_Y = 1520;
+    public static final float[] P_PUSH = {460, 1600};          // pinball PUSH button   // where the on-screen markers are drawn
 
     public enum State { IDLE, BAIT_POPUP, WAITING, REEL, HOOKED, MINIGAME, CATCH, LUCK_POPUP, UNKNOWN }
 
@@ -162,6 +163,15 @@ public class Detect {
 
     public static boolean bagPopupOpen(Frame f) { return notifyYellow(f) > 0.3f; }
     public static boolean scatterAvailable(Frame f) { return scatterGreen(f) > 0.3f; }
+
+    /** Pinball Machine screen: yellow PUSH button, cyan ball counter, bottom tab bar. */
+    public static boolean isPinballScreen(Frame f) {
+        int[] a = patch(f, new float[]{400, 1575}), b = patch(f, new float[]{520, 1630});
+        int[] bar = patch(f, new float[]{340, 1770}), tab = patch(f, new float[]{95, 1880});
+        return a[0] > 230 && a[1] > 210 && a[2] < 130 && b[0] > 230 && b[1] > 210 && b[2] < 150
+                && bar[2] > 220 && bar[1] > 190 && bar[0] < 110
+                && tab[0] > 180 && tab[1] > 220 && tab[2] > 220;
+    }
 
     static boolean isWhite(int[] c) { return c[0] > 225 && c[1] > 225 && c[2] > 215; }
 
