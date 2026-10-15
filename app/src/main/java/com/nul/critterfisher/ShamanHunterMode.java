@@ -135,20 +135,26 @@ public class ShamanHunterMode implements Mode {
     private void handleRoom() {
         phase("scanning for Shaman");
         double scanEnd = now() + Settings.shamanScanMs / 1000.0;
-        int hits = 0;
+        int hits = 0, checks = 0;
+        boolean strong = false;
         float bestScore = 0;
-        while (alive && running && now() < scanEnd) {
+        // look for the full scan time AND at least 5 checks (slow phones get extra time)
+        while (alive && running && (now() < scanEnd || checks < 5) && now() < scanEnd + 6) {
             Frame f = host.next(150);
             if (f == null) continue;
             float s = host.shamanScore(f);
+            checks++;
             bestScore = Math.max(bestScore, s);
             if (s >= ShamanDetector.THRESHOLD) hits++;
-            phase(String.format("scanning (match %.2f)", s));
-            if (hits >= 2) break;              // matched in 2 frames: effects flash, a Shaman stays
+            if (s >= ShamanDetector.STRONG) strong = true;
+            phase(String.format("scanning %d (match %.2f)", checks, s));
+            if (strong || hits >= 2) break;
         }
         if (!running) return;
-        st.message = String.format("room %d: best Shaman match %.2f", hops, bestScore);
-        if (hits >= 2) {
+        st.message = String.format("room %d: best Shaman match %.2f over %d checks", hops, bestScore, checks);
+        boolean found = strong || hits >= 2;
+        if (!found && bestScore >= 0.50f) host.saveFrame("near-miss");   // evidence for tuning
+        if (found) {
             host.saveFrame("shaman-found");
             if (!Settings.shamanAutoFight) {
                 hunts++;

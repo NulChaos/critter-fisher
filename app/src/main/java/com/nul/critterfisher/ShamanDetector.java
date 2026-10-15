@@ -22,13 +22,15 @@ import java.io.InputStream;
  * Prototype results: Shaman frames 0.79-0.95, everything else <= 0.54.
  */
 public class ShamanDetector {
-    static final double WORK = 0.5;                       // 720-wide reference -> 360-wide work image
-    static final double[] SCALES = {0.7, 0.85, 1.0, 1.15, 1.3};
-    public static final float THRESHOLD = 0.70f;
+    static final double WORK = 0.35;                      // 720-wide reference -> 252-wide work image (fast)
+    static final double[] SCALES = {0.75, 0.9, 1.05, 1.2};
+    public static final float THRESHOLD = 0.60f;          // "decent" match
+    public static final float STRONG = 0.66f;             // one of these is enough
 
     private final Mat[][] templates;                      // [template][scale]
     private final Mat rgba = new Mat(), rgb = new Mat(), small = new Mat(), result = new Mat();
     public volatile float lastScore = 0;
+    public volatile long lastMs = 0;
     public volatile int lastX = -1, lastY = -1;          // reference coords of the best match
 
     public static ShamanDetector create(Context c) {
@@ -41,7 +43,7 @@ public class ShamanDetector {
     }
 
     private ShamanDetector(Context c) throws Exception {
-        String[] names = {"shaman_sprite.png", "shaman_portrait.png"};
+        String[] names = {"shaman_sprite.png", "shaman_portrait.png", "shaman_portrait_edge.png"};
         templates = new Mat[names.length][SCALES.length];
         for (int i = 0; i < names.length; i++) {
             Bitmap b;
@@ -61,6 +63,11 @@ public class ShamanDetector {
 
     /** Best match score (0..1) for the Shaman in this frame's arena area. */
     public synchronized float score(Detect.Frame f) {
+        long t0 = System.nanoTime();
+        try { return scoreInner(f); } finally { lastMs = (System.nanoTime() - t0) / 1_000_000L; }
+    }
+
+    private float scoreInner(Detect.Frame f) {
         if (rgba.rows() != f.h || rgba.cols() != f.stride / 4) {
             rgba.release();
             rgba.create(f.h, f.stride / 4, CvType.CV_8UC4);

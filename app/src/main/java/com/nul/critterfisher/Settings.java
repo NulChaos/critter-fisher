@@ -25,7 +25,7 @@ public class Settings {
     public static volatile int zoboIntervalMs = 500;
     public static volatile int shamanHunts = 3;           // 0 = no limit
     public static volatile int shamanMaxRooms = 150;      // 0 = no limit
-    public static volatile int shamanScanMs = 3000;
+    public static volatile int shamanScanMs = 4000;
     public static volatile int shamanReuseSec = 21;
     public static volatile int shamanMaxFightSec = 60;
     /** Off = finder only: stop and alert when a Shaman is found, you fight it. */
