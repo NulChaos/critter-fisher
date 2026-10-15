@@ -17,6 +17,8 @@ public class Bot implements Mode {
         void onStatus(Status s);
         /** Save the current screen (and what the bot read from it) for debugging. */
         default void saveFrame(String tag) { }
+        /** Shaman match score 0..1 (OpenCV shape match in the app; portrait fallback in tests). */
+        default float shamanScore(Frame f) { return Detect.bossPortrait(f) == 2 ? 1f : 0f; }
     }
 
     /** Snapshot for the overlay. */

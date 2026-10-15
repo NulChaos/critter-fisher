@@ -135,17 +135,20 @@ public class ShamanHunterMode implements Mode {
     private void handleRoom() {
         phase("scanning for Shaman");
         double scanEnd = now() + Settings.shamanScanMs / 1000.0;
-        int hits = 0, frames = 0;
+        int hits = 0;
+        float bestScore = 0;
         while (alive && running && now() < scanEnd) {
             Frame f = host.next(150);
             if (f == null) continue;
-            frames++;
-            if (Detect.bossPortrait(f) == 2) hits++;
-            if (hits >= 3) break;              // seen in 3 frames: effects flash, a Shaman stays
-            LockSupport.parkNanos(60_000_000L);
+            float s = host.shamanScore(f);
+            bestScore = Math.max(bestScore, s);
+            if (s >= ShamanDetector.THRESHOLD) hits++;
+            phase(String.format("scanning (match %.2f)", s));
+            if (hits >= 2) break;              // matched in 2 frames: effects flash, a Shaman stays
         }
         if (!running) return;
-        if (hits >= 3) {
+        st.message = String.format("room %d: best Shaman match %.2f", hops, bestScore);
+        if (hits >= 2) {
             host.saveFrame("shaman-found");
             if (!Settings.shamanAutoFight) {
                 hunts++;
@@ -172,9 +175,9 @@ public class ShamanHunterMode implements Mode {
             Frame f = host.next(150);
             if (f != null) {
                 if (Detect.zoboLobbyArena(f) >= 0) return;          // we got kicked to the lobby
-                if (Detect.bossPortrait(f) == 2) goneSince = -1;
+                if (host.shamanScore(f) >= ShamanDetector.THRESHOLD) goneSince = -1;
                 else if (goneSince < 0) goneSince = t;
-                else if (t - goneSince > 2.5) {                      // Shaman gone: killed or left
+                else if (t - goneSince > 4) {                        // Shaman gone: killed or left
                     hunts++;
                     msg("Shaman down (or gone) after " + (int) (t - start) + "s - next room");
                     sleepMs(1500);                                   // let reward effects play

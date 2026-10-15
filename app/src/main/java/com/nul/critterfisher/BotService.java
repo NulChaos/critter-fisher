@@ -375,6 +375,23 @@ public class BotService extends Service implements Bot.Host {
         return TapService.tap(x / Detect.REF_W * realW, y / Detect.REF_H * realH);
     }
 
+    // ---------------------------------------------------- Shaman detection (OpenCV)
+    private volatile ShamanDetector shamanDetector;
+    private volatile boolean detectorTried = false;
+
+    @Override public float shamanScore(Detect.Frame f) {
+        if (!detectorTried) {
+            detectorTried = true;
+            shamanDetector = ShamanDetector.create(this);
+            if (shamanDetector == null) {
+                main.post(() -> { shown.message = "OpenCV failed to load - using the portrait check only"; refreshUi(); });
+            }
+        }
+        ShamanDetector d = shamanDetector;
+        if (d == null) return Detect.bossPortrait(f) == 2 ? 1f : 0f;
+        return d.score(f);
+    }
+
     // ---------------------------------------------------- frame saving (debug)
     private int savedFrames = 0;
 
@@ -390,8 +407,9 @@ public class BotService extends Service implements Bot.Host {
                 copy = f.data.clone();
                 w = f.w; h = f.h; stride = f.stride;
                 boolean[] title = Detect.titleMask(f);
-                readings = String.format(Locale.US, "%s_%s_portrait%d_arena%d_lobby%d_tz%.2f_vz%.2f",
-                        tag, Detect.screenOf(f), Detect.bossPortrait(f), Detect.isZoboArena(f) ? 1 : 0,
+                float sh = shamanScore(f);
+                readings = String.format(Locale.US, "%s_%s_shaman%.2f_portrait%d_arena%d_lobby%d_tz%.2f_vz%.2f",
+                        tag, Detect.screenOf(f), sh, Detect.bossPortrait(f), Detect.isZoboArena(f) ? 1 : 0,
                         Detect.zoboLobbyArena(f), Detect.titleSimilarity(title, Detect.TROZOBO_TITLE),
                         Detect.titleSimilarity(title, Detect.VIENZOBO_TITLE));
             }
