@@ -214,24 +214,20 @@ public class Detect {
 
     // ------------------------------------------------------------- Zobo Shooter
     /**
-     * Any Zobo Shooter arena, recognised from the BOTTOM of the screen (gold coin, grey
-     * Enrage button, purple Lock On ring) so the overlay panel at the top can't hide it.
+     * Any Zobo Shooter arena, recognised from the Enrage and Lock On buttons at the bottom
+     * right, which never move and which the overlay panel at the top can't hide.
      */
     public static boolean isZoboArena(Frame f) {
-        // The coin icon slides left/right as the balance text changes length
-        // ("404.23K" vs "404K"), so look for it anywhere along the pill.
-        int[] coin = {0, 0, 0};
-        for (float cx = 320; cx <= 470; cx += 10) {
-            int[] c = patch(f, new float[]{cx, 1795});
-            if (c[0] > 170 && c[1] > 110 && c[1] < 200 && c[2] < 90) { coin = c; break; }
-        }
         int[] enrBg = patch(f, new float[]{800, 1625});
         int[] ring = patch(f, new float[]{800, 1745});
-        boolean coinGold = coin[0] > 170 && coin[1] > 110 && coin[1] < 200 && coin[2] < 90;
         boolean enrageGrey = Math.abs(enrBg[0] - enrBg[1]) < 15 && Math.abs(enrBg[1] - enrBg[2]) < 15
                 && enrBg[0] > 100 && enrBg[0] < 170;
         boolean lockPurple = ring[0] > 150 && ring[1] < 180 && ring[2] > 200 && ring[2] - ring[1] > 50;
-        return coinGold && enrageGrey && lockPurple;
+        // The Enrage and Lock On buttons never move, so they are the arena's fingerprint.
+        // (The coin icon shifts as the balance text changes, so it isn't used.)
+        int[] fire = patch(f, new float[]{820, 1540});
+        boolean enrageIcon = fire[0] > 220 && fire[1] > 150;          // bright flame icon
+        return enrageGrey && lockPurple && enrageIcon;
     }
 
     /** The yellow multiplier badge at the top is visible (i.e. not covered by the panel). */
