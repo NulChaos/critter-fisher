@@ -21,6 +21,8 @@ public class Settings {
     public static volatile boolean tapJitter = true;
     public static volatile boolean minimized = false;
     public static volatile boolean autoSwitch = true;
+    public static volatile int zoboShots = 1000;          // 0 = no limit
+    public static volatile int zoboIntervalMs = 500;
     public static volatile boolean autoStart = false;
     public static volatile int calcCurrency = 2, calcTarget = 100;                  // 0 fishing, 1 pinball
 
@@ -42,6 +44,8 @@ public class Settings {
         tapJitter = p.getBoolean("jitter", tapJitter);
         minimized = p.getBoolean("mini", minimized);
         autoSwitch = p.getBoolean("autoSw", autoSwitch);
+        zoboShots = p.getInt("zN", zoboShots);
+        zoboIntervalMs = p.getInt("zMs", zoboIntervalMs);
         autoStart = p.getBoolean("autoSt", autoStart);
         calcCurrency = p.getInt("calcCur", calcCurrency);
         calcTarget = p.getInt("calcN", calcTarget);
@@ -57,7 +61,8 @@ public class Settings {
                 .putInt("stopMin", stopAfterMin).putInt("stopN", stopAfterCatches)
                 .putBoolean("alert", alertOnPause).putBoolean("jitter", tapJitter)
                 .putBoolean("mini", minimized).putBoolean("autoSw", autoSwitch)
-                .putBoolean("autoSt", autoStart).putInt("calcCur", calcCurrency)
+                .putBoolean("autoSt", autoStart).putInt("zN", zoboShots)
+                .putInt("zMs", zoboIntervalMs).putInt("calcCur", calcCurrency)
                 .putInt("calcN", calcTarget).apply();
     }
 }

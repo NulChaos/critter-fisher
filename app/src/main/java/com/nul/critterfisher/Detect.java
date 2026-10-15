@@ -212,12 +212,123 @@ public class Detect {
         return s[4] > 0.30f && present >= 2;
     }
 
-    public enum Screen { FISHING, PINBALL, GOLDRUSH, OTHER }
+    // ------------------------------------------------------------- Zobo Shooter
+    /** Any Zobo Shooter arena: yellow/coloured multiplier badge on top, coin pill at the bottom. */
+    public static boolean isZoboArena(Frame f) {
+        int[] badgeA = patch(f, new float[]{530, 135}), badgeB = patch(f, new float[]{640, 135});
+        int[] pill = patch(f, new float[]{500, 1795}), coin = patch(f, new float[]{380, 1795});
+        boolean badge = badgeA[0] > 200 && badgeA[1] > 170 && badgeB[0] > 200 && badgeB[1] > 170;
+        boolean pillDark = pill[0] < 60 && pill[1] < 60 && pill[2] < 60;
+        boolean coinGold = coin[0] > 170 && coin[1] > 110 && coin[1] < 200 && coin[2] < 90;
+        return badge && pillDark && coinGold;
+    }
+
+    /** White-text mask of the arena title, pooled to a coarse grid (TITLE_R x TITLE_C). */
+    static final int TITLE_R = 6, TITLE_C = 36;
+
+    public static boolean[] titleMask(Frame f) {
+        int x0 = f.sx(160), x1 = f.sx(490), y0 = f.sy(110), y1 = f.sy(162);
+        boolean[] m = new boolean[TITLE_R * TITLE_C];
+        for (int r = 0; r < TITLE_R; r++) {
+            for (int c = 0; c < TITLE_C; c++) {
+                int ya = y0 + (y1 - y0) * r / TITLE_R, yb = y0 + (y1 - y0) * (r + 1) / TITLE_R;
+                int xa = x0 + (x1 - x0) * c / TITLE_C, xb = x0 + (x1 - x0) * (c + 1) / TITLE_C;
+                int n = 0, w = 0;
+                for (int y = ya; y < Math.max(yb, ya + 1); y++) {
+                    for (int x = xa; x < Math.max(xb, xa + 1); x++) {
+                        n++;
+                        if (f.r(x, y) > 215 && f.g(x, y) > 215 && f.b(x, y) > 215) w++;
+                    }
+                }
+                m[r * TITLE_C + c] = w > n * 0.22f;
+            }
+        }
+        return m;
+    }
+
+    /** Title mask of "Trozobo Arena" (filled in from the user's screenshot). */
+    static final String TROZOBO_TITLE_STR =
+            "...................................." +
+            ".###...........#.......#............" +
+            "..#.#######.##.##.##..#####.#######." +
+            "..#.#.#.#.##########..#########.###." +
+            "..#.#.########.##.##..#.#######.###." +
+            "....................................";
+    public static boolean[] TROZOBO_TITLE_ARR() { return TROZOBO_TITLE; }
+    static final boolean[] TROZOBO_TITLE = new boolean[TITLE_R * TITLE_C];
+    static {
+        for (int i = 0; i < TROZOBO_TITLE.length; i++) TROZOBO_TITLE[i] = TROZOBO_TITLE_STR.charAt(i) == '#';
+    }
+
+    public static float titleSimilarity(boolean[] a, boolean[] b) {
+        int inter = 0, union = 0;
+        for (int i = 0; i < a.length; i++) {
+            if (a[i] || b[i]) union++;
+            if (a[i] && b[i]) inter++;
+        }
+        return union == 0 ? 0 : inter / (float) union;
+    }
+
+    /** True only in Trozobo Arena (the 1x room). */
+    public static boolean isTrozobo(Frame f) {
+        return isZoboArena(f) && TROZOBO_TITLE != null
+                && titleSimilarity(titleMask(f), TROZOBO_TITLE) > 0.55f;
+    }
+
+    /** Finds the best Zobo to shoot (densest dark outlines) inside the arena, avoiding pedestals. */
+    public static float[] zoboTarget(Frame f) {
+        final int cell = 46;
+        float best = 0;
+        float[] at = null;
+        for (int gy = 600; gy + cell <= 1420; gy += cell) {
+            for (int gx = 70; gx + cell <= 860; gx += cell) {
+                float cx = gx + cell / 2f, cy = gy + cell / 2f;
+                if (cx < 165 && cy > 830 && cy < 1130) continue;        // left player's pedestal
+                if (cx > 760 && cy > 840 && cy < 1130) continue;        // right player's pedestal
+                if (cx > 235 && cx < 705 && cy > 1285) continue;        // your own pedestal
+                int x0 = f.sx(gx), x1 = f.sx(gx + cell), y0 = f.sy(gy), y1 = f.sy(gy + cell);
+                int n = 0, dark = 0;
+                for (int y = y0; y < y1; y += 2) {
+                    for (int x = x0; x < x1; x += 2) {
+                        n++;
+                        if (f.r(x, y) < 75 && f.g(x, y) < 75 && f.b(x, y) < 75) dark++;
+                    }
+                }
+                float d = n == 0 ? 0 : dark / (float) n;
+                if (d > best) { best = d; at = new float[]{cx, cy}; }
+            }
+        }
+        return best >= 0.15f ? at : null;
+    }
+
+    /**
+     * Zobo Shooter lobby: returns the selected arena (0 = Trozobo, 7 = Vienzobo) from the
+     * row of 8 dots, or -1 if this isn't the lobby.
+     */
+    public static int zoboLobbyArena(Frame f) {
+        int[] s1 = patch(f, new float[]{530, 1920}), s2 = patch(f, new float[]{300, 1920});
+        boolean startBtn = s1[0] > 200 && s1[1] > 160 && s1[2] < 70 && s2[0] > 200 && s2[1] > 160 && s2[2] < 70;
+        if (!startBtn) return -1;
+        int sel = -1;
+        for (int i = 0; i < 8; i++) {
+            int[] d = patch(f, new float[]{288 + 50.3f * i, 1440});
+            boolean yellow = d[0] > 210 && d[1] > 180 && d[2] < 70;
+            boolean purple = d[0] < 120 && d[1] < 80 && d[2] > 130;
+            if (yellow) {
+                if (sel >= 0) return -1;      // more than one lit: not the selector
+                sel = i;
+            } else if (!purple) return -1;
+        }
+        return sel;
+    }
+
+    public enum Screen { FISHING, PINBALL, GOLDRUSH, ZOBO, OTHER }
 
     /** Which game screen is showing (used for automatic mode switching). */
     public static Screen screenOf(Frame f) {
         if (isPinballScreen(f)) return Screen.PINBALL;
         if (isGoldrushMap(f)) return Screen.GOLDRUSH;   // before fishing: map colours can fool it
+        if (isZoboArena(f)) return Screen.ZOBO;
         State s = stateOf(f, null);
         if (s != State.UNKNOWN) return Screen.FISHING;
         return Screen.OTHER;

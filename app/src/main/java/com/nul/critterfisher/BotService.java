@@ -66,10 +66,11 @@ public class BotService extends Service implements Bot.Host {
     private PinballBot pinball;
     private Mode[] modes;
     private volatile Mode current;
-    private LinearLayout fishSettings, pinballSettings, goldrushSettings;
+    private LinearLayout fishSettings, pinballSettings, goldrushSettings, zoboSettings;
 
-    private static final String[] MODE_ICONS = {"🎣", "🎱", "🏝"};
+    private static final String[] MODE_ICONS = {"🎣", "🎱", "🏝", "🧟"};
     private GoldrushMode goldrush;
+    private ZoboFarmMode zobo;
 
     // ------------------------------------------------- automatic mode switching
     private volatile Detect.Screen lastScreen = Detect.Screen.OTHER;
@@ -82,6 +83,7 @@ public class BotService extends Service implements Bot.Host {
             case FISHING: return 0;
             case PINBALL: return 1;
             case GOLDRUSH: return 2;
+            case ZOBO: return 3;
             default: return -1;
         }
     }
@@ -147,13 +149,15 @@ public class BotService extends Service implements Bot.Host {
         shown.marker = -1;
         shown.message = i == 0 ? "Fishing: open the Fishing Contest, then press ▶"
                 : i == 1 ? "Pinball: open the Goldrush tab, then press ▶"
-                : "Goldrush advisor: open the Island Goldrush map";
+                : i == 2 ? "Goldrush advisor: open the Island Goldrush map"
+                : "Zobo farm: pick Trozobo (1x) in the menu, Start Now, then press ▶";
         if (modeBtn != null) {
             modeBtn.setText(MODE_ICONS[i]);
             miniBar.setVisibility(i == 0 && !Settings.minimized ? View.VISIBLE : View.GONE);
             fishSettings.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
             pinballSettings.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
             goldrushSettings.setVisibility(i == 2 ? View.VISIBLE : View.GONE);
+            zoboSettings.setVisibility(i == 3 ? View.VISIBLE : View.GONE);
         }
         refreshUi();
     }
@@ -240,7 +244,9 @@ public class BotService extends Service implements Bot.Host {
         pt.start();
         goldrush = new GoldrushMode(this);
         new Thread(goldrush, "goldrush").start();
-        modes = new Mode[]{bot, pinball, goldrush};
+        zobo = new ZoboFarmMode(this);
+        new Thread(zobo, "zobo").start();
+        modes = new Mode[]{bot, pinball, goldrush, zobo};
         selectMode(Settings.mode);
         applyMinimized();
         refreshUi();
@@ -317,6 +323,8 @@ public class BotService extends Service implements Bot.Host {
                     if (!inMinigame && nowNs - lastDetectNs > 400_000_000L) {
                         lastDetectNs = nowNs;
                         lastScreen = Detect.screenOf(frame);
+                        int lobby = Detect.zoboLobbyArena(frame);
+                        if (lobby >= 0) ZoboFarmMode.lobbyArena = lobby;
                     }
                 } finally {
                     img.close();
@@ -503,6 +511,9 @@ public class BotService extends Service implements Bot.Host {
         settingsBox.addView(fishSettings);
         settingsBox.addView(pinballSettings);
         settingsBox.addView(goldrushSettings);
+        zoboSettings = new LinearLayout(this);
+        zoboSettings.setOrientation(LinearLayout.VERTICAL);
+        settingsBox.addView(zoboSettings);
         StringBuilder gtips = new StringBuilder("Goldrush advisor (read-only, never taps)\n");
         for (String tipText : GoldrushMode.TIPS) gtips.append("• ").append(tipText).append('\n');
         goldrushSettings.addView(text(gtips.toString(), 11, 0xFFDDE6FF));
@@ -564,6 +575,16 @@ public class BotService extends Service implements Bot.Host {
         });
         pinballSettings.addView(calcOut);
         updCalc.run();
+
+        target = zoboSettings;
+        addSlider("Shots per batch (0 = no limit)", "", 0, 5000, Settings.zoboShots,
+                v -> Settings.zoboShots = v);
+        addSlider("Time between shots", "ms", 250, 3000, Settings.zoboIntervalMs,
+                v -> Settings.zoboIntervalMs = v);
+        zoboSettings.addView(text("Farms Lock On / Enrage in Trozobo Arena only (1 coin per shot). "
+                + "Select Trozobo in the Zobo Shooter menu before entering - the bot checks both "
+                + "the menu selection and the arena title, and refuses to shoot anywhere else.",
+                11, 0xFF8FA0BD));
 
         target = settingsBox;
         TextView gen = text("All modes", 12, 0xFFBFD4FF);
