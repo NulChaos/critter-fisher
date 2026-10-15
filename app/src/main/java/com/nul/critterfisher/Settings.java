@@ -24,6 +24,8 @@ public class Settings {
     public static volatile int zoboShots = 1000;          // 0 = no limit
     public static volatile int zoboIntervalMs = 500;
     public static volatile boolean autoStart = false;
+    /** Experimental: Android 14+ "share a single app". Off by default - froze a Samsung phone. */
+    public static volatile boolean shareSingleApp = false;
     public static volatile int calcCurrency = 2, calcTarget = 100;                  // 0 fishing, 1 pinball
 
     public static void load(Context c) {
@@ -47,6 +49,7 @@ public class Settings {
         zoboShots = p.getInt("zN", zoboShots);
         zoboIntervalMs = p.getInt("zMs", zoboIntervalMs);
         autoStart = p.getBoolean("autoSt", autoStart);
+        shareSingleApp = p.getBoolean("single", shareSingleApp);
         calcCurrency = p.getInt("calcCur", calcCurrency);
         calcTarget = p.getInt("calcN", calcTarget);
     }
@@ -61,7 +64,7 @@ public class Settings {
                 .putInt("stopMin", stopAfterMin).putInt("stopN", stopAfterCatches)
                 .putBoolean("alert", alertOnPause).putBoolean("jitter", tapJitter)
                 .putBoolean("mini", minimized).putBoolean("autoSw", autoSwitch)
-                .putBoolean("autoSt", autoStart).putInt("zN", zoboShots)
+                .putBoolean("autoSt", autoStart).putBoolean("single", shareSingleApp).putInt("zN", zoboShots)
                 .putInt("zMs", zoboIntervalMs).putInt("calcCur", calcCurrency)
                 .putInt("calcN", calcTarget).apply();
     }

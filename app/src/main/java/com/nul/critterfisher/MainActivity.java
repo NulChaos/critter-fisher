@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.projection.MediaProjectionConfig;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
@@ -79,8 +80,25 @@ public class MainActivity extends Activity {
         startBtn = button("3. Start floating panel");
         startBtn.setOnClickListener(v -> startCapture());
         root.addView(startBtn);
-        root.addView(text("When Android asks what to share, pick \"A single app\" → Clash of Critters. The bot then sees only the game, never its own panel. (If your phone only offers the entire screen, keep the panel near the top.) Then open an event and the panel switches to it automatically.",
+        root.addView(text("Android will ask to share your screen - allow it. Keep the panel near the top of the screen. Then open an event and the panel switches to it automatically.",
                 13, 0xFF8FA0BD));
+        com.nul.critterfisher.Settings.load(this);
+        TextView singleBtn = button("");
+        Runnable paintSingle = () -> {
+            boolean on = com.nul.critterfisher.Settings.shareSingleApp;
+            singleBtn.setText(on ? "Experimental: share only the game (ON)"
+                    : "Experimental: share only the game (off)");
+            paint(singleBtn, on ? 0xFF8A5A1A : 0xFF3A4660);
+        };
+        paintSingle.run();
+        singleBtn.setOnClickListener(v -> {
+            com.nul.critterfisher.Settings.shareSingleApp = !com.nul.critterfisher.Settings.shareSingleApp;
+            com.nul.critterfisher.Settings.save(this);
+            paintSingle.run();
+        });
+        root.addView(singleBtn);
+        root.addView(text("Leave this OFF if your phone ever froze after sharing. It lets Android 14+ offer \"A single app\", which keeps the panel out of what the bot sees, but it caused a full freeze on at least one Samsung phone.",
+                12, 0xFFB08A5A));
 
         updateTv = text("Build " + Updater.currentBuild(this), 13, 0xFF8FA0BD);
         updateTv.setPadding(0, dp(24), 0, 0);
@@ -160,9 +178,12 @@ public class MainActivity extends Activity {
         }
         if (BotService.active) stopService(new Intent(this, BotService.class));
         MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
-        // No config: on Android 14+ this lets you pick "A single app", which keeps
-        // the panel and markers out of what the bot sees.
-        Intent i = mpm.createScreenCaptureIntent();
+        // Default: whole screen (what builds 1-10 used). Single-app sharing is opt-in because
+        // it froze a phone right after sharing.
+        boolean single = com.nul.critterfisher.Settings.shareSingleApp;
+        Intent i = (Build.VERSION.SDK_INT >= 34 && !single)
+                ? mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+                : mpm.createScreenCaptureIntent();
         startActivityForResult(i, REQ_CAPTURE);
     }
 

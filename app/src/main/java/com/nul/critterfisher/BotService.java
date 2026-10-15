@@ -237,7 +237,7 @@ public class BotService extends Service implements Bot.Host {
         active = true;
         bot = new Bot(this);
         botThread = new Thread(bot, "bot");
-        botThread.setPriority(Thread.MAX_PRIORITY);
+        // normal priority: a max-priority thread can starve the system UI on some phones
         botThread.start();
         pinball = new PinballBot(this);
         Thread pt = new Thread(pinball, "pinball");
@@ -342,7 +342,17 @@ public class BotService extends Service implements Bot.Host {
 
     private final Random rnd = new Random();
 
-    @Override public boolean tap(float[] p) {
+    private long lastTapNs = 0;
+
+    @Override public synchronized boolean tap(float[] p) {
+        // Hard safety limit: never send gestures faster than one per 60 ms, whatever a mode does.
+        long now = System.nanoTime();
+        long wait = 60_000_000L - (now - lastTapNs);
+        if (wait > 0) {
+            try { Thread.sleep(wait / 1_000_000L, (int) (wait % 1_000_000L)); }
+            catch (InterruptedException e) { return false; }
+        }
+        lastTapNs = System.nanoTime();
         float x = p[0], y = p[1];
         if (Settings.tapJitter) {               // small random offset so taps aren't pixel-identical
             x += (rnd.nextFloat() - 0.5f) * 14;
