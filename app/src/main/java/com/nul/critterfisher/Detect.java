@@ -213,14 +213,25 @@ public class Detect {
     }
 
     // ------------------------------------------------------------- Zobo Shooter
-    /** Any Zobo Shooter arena: yellow/coloured multiplier badge on top, coin pill at the bottom. */
+    /**
+     * Any Zobo Shooter arena, recognised from the BOTTOM of the screen (gold coin, grey
+     * Enrage button, purple Lock On ring) so the overlay panel at the top can't hide it.
+     */
     public static boolean isZoboArena(Frame f) {
-        int[] badgeA = patch(f, new float[]{530, 135}), badgeB = patch(f, new float[]{640, 135});
-        int[] pill = patch(f, new float[]{500, 1795}), coin = patch(f, new float[]{380, 1795});
-        boolean badge = badgeA[0] > 200 && badgeA[1] > 170 && badgeB[0] > 200 && badgeB[1] > 170;
-        boolean pillDark = pill[0] < 60 && pill[1] < 60 && pill[2] < 60;
+        int[] coin = patch(f, new float[]{380, 1795});
+        int[] enrBg = patch(f, new float[]{800, 1625});
+        int[] ring = patch(f, new float[]{800, 1745});
         boolean coinGold = coin[0] > 170 && coin[1] > 110 && coin[1] < 200 && coin[2] < 90;
-        return badge && pillDark && coinGold;
+        boolean enrageGrey = Math.abs(enrBg[0] - enrBg[1]) < 15 && Math.abs(enrBg[1] - enrBg[2]) < 15
+                && enrBg[0] > 100 && enrBg[0] < 170;
+        boolean lockPurple = ring[0] > 150 && ring[1] < 180 && ring[2] > 200 && ring[2] - ring[1] > 50;
+        return coinGold && enrageGrey && lockPurple;
+    }
+
+    /** The yellow multiplier badge at the top is visible (i.e. not covered by the panel). */
+    public static boolean badgeVisible(Frame f) {
+        int[] a = patch(f, new float[]{530, 135}), b = patch(f, new float[]{640, 135});
+        return a[0] > 200 && a[1] > 170 && b[0] > 200 && b[1] > 170;
     }
 
     /** White-text mask of the arena title, pooled to a coarse grid (TITLE_R x TITLE_C). */
@@ -271,8 +282,8 @@ public class Detect {
 
     /** True only in Trozobo Arena (the 1x room). */
     public static boolean isTrozobo(Frame f) {
-        return isZoboArena(f) && TROZOBO_TITLE != null
-                && titleSimilarity(titleMask(f), TROZOBO_TITLE) > 0.55f;
+        return isZoboArena(f) && (!badgeVisible(f)
+                || titleSimilarity(titleMask(f), TROZOBO_TITLE) > 0.75f);
     }
 
     /** Finds the best Zobo to shoot (densest dark outlines) inside the arena, avoiding pedestals. */

@@ -9,7 +9,8 @@ import java.util.concurrent.locks.LockSupport;
  * Zobo Shooter power-up farm (Lock On / Enrage). Shoots Zobos ONLY in Trozobo Arena (1x),
  * where each shot costs 1 coin. Two independent checks must both pass before any tap:
  *  1. the last arena selected in the Zobo Shooter lobby was Trozobo (first dot), and
- *  2. the arena title matches "Trozobo Arena".
+ *  2. the arena title matches "Trozobo Arena" (checked whenever the title is visible -
+ *     with whole-screen sharing the overlay panel can cover it).
  * Anything else pauses the farm without tapping.
  */
 public class ZoboFarmMode implements Mode {
@@ -77,7 +78,9 @@ public class ZoboFarmMode implements Mode {
 
             if (Detect.isZoboArena(f)) {
                 offSince = -1;
-                float sim = Detect.titleSimilarity(Detect.titleMask(f), Detect.TROZOBO_TITLE);
+                boolean titleVisible = Detect.badgeVisible(f);
+                float sim = titleVisible
+                        ? Detect.titleSimilarity(Detect.titleMask(f), Detect.TROZOBO_TITLE) : 1f;
                 if (lobbyArena < 0) {
                     stop("Open Trozobo from the Zobo Shooter menu first, so I can confirm the arena.");
                     continue;
@@ -100,7 +103,7 @@ public class ZoboFarmMode implements Mode {
                 }
                 if (!host.tap(t)) { stop("Tap service is OFF - enable it in Accessibility settings"); continue; }
                 shots++;
-                st.phase = "farming";
+                st.phase = titleVisible ? "farming" : "farming (title hidden by panel)";
                 st.bait = target > 0 ? String.format("shots %d / %d (1 coin each)", shots, target)
                         : "shots " + shots + " (no limit)";
                 push(false);
