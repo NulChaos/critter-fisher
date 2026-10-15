@@ -23,6 +23,11 @@ public class Settings {
     public static volatile boolean autoSwitch = true;
     public static volatile int zoboShots = 1000;          // 0 = no limit
     public static volatile int zoboIntervalMs = 500;
+    public static volatile int shamanHunts = 3;           // 0 = no limit
+    public static volatile int shamanMaxRooms = 150;      // 0 = no limit
+    public static volatile int shamanScanMs = 2500;
+    public static volatile int shamanReuseSec = 21;
+    public static volatile int shamanMaxFightSec = 60;
     public static volatile boolean autoStart = false;
     /** Experimental: Android 14+ "share a single app". Off by default - froze a Samsung phone. */
     public static volatile boolean shareSingleApp = false;
@@ -48,6 +53,11 @@ public class Settings {
         autoSwitch = p.getBoolean("autoSw", autoSwitch);
         zoboShots = p.getInt("zN", zoboShots);
         zoboIntervalMs = p.getInt("zMs", zoboIntervalMs);
+        shamanHunts = p.getInt("shN", shamanHunts);
+        shamanMaxRooms = p.getInt("shRooms", shamanMaxRooms);
+        shamanScanMs = p.getInt("shScan", shamanScanMs);
+        shamanReuseSec = p.getInt("shReuse", shamanReuseSec);
+        shamanMaxFightSec = p.getInt("shFight", shamanMaxFightSec);
         autoStart = p.getBoolean("autoSt", autoStart);
         shareSingleApp = p.getBoolean("single", shareSingleApp);
         calcCurrency = p.getInt("calcCur", calcCurrency);
@@ -65,7 +75,9 @@ public class Settings {
                 .putBoolean("alert", alertOnPause).putBoolean("jitter", tapJitter)
                 .putBoolean("mini", minimized).putBoolean("autoSw", autoSwitch)
                 .putBoolean("autoSt", autoStart).putBoolean("single", shareSingleApp).putInt("zN", zoboShots)
-                .putInt("zMs", zoboIntervalMs).putInt("calcCur", calcCurrency)
+                .putInt("zMs", zoboIntervalMs).putInt("shN", shamanHunts)
+                .putInt("shRooms", shamanMaxRooms).putInt("shScan", shamanScanMs)
+                .putInt("shReuse", shamanReuseSec).putInt("shFight", shamanMaxFightSec).putInt("calcCur", calcCurrency)
                 .putInt("calcN", calcTarget).apply();
     }
 }

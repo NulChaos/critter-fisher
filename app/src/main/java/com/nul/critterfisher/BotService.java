@@ -66,9 +66,10 @@ public class BotService extends Service implements Bot.Host {
     private PinballBot pinball;
     private Mode[] modes;
     private volatile Mode current;
-    private LinearLayout fishSettings, pinballSettings, goldrushSettings, zoboSettings;
+    private LinearLayout fishSettings, pinballSettings, goldrushSettings, zoboSettings, shamanSettings;
 
-    private static final String[] MODE_ICONS = {"🎣", "🎱", "🏝", "🧟"};
+    private static final String[] MODE_ICONS = {"🎣", "🎱", "🏝", "🧟", "🎯"};
+    private ShamanHunterMode shaman;
     private GoldrushMode goldrush;
     private ZoboFarmMode zobo;
 
@@ -83,7 +84,7 @@ public class BotService extends Service implements Bot.Host {
             case FISHING: return 0;
             case PINBALL: return 1;
             case GOLDRUSH: return 2;
-            case ZOBO: return 3;
+            case ZOBO: return ZoboFarmMode.lobbyArena == 7 ? 4 : 3;   // Vienzobo -> hunter
             default: return -1;
         }
     }
@@ -150,7 +151,8 @@ public class BotService extends Service implements Bot.Host {
         shown.message = i == 0 ? "Fishing: open the Fishing Contest, then press ▶"
                 : i == 1 ? "Pinball: open the Goldrush tab, then press ▶"
                 : i == 2 ? "Goldrush advisor: open the Island Goldrush map"
-                : "Zobo farm: pick Trozobo (1x) in the menu, Start Now, then press ▶";
+                : i == 3 ? "Zobo farm: pick Trozobo (1x) in the menu, Start Now, then press ▶"
+                : "Shaman hunt: select Vienzobo (200x) in the Zobo menu, then press ▶";
         if (modeBtn != null) {
             modeBtn.setText(MODE_ICONS[i]);
             miniBar.setVisibility(i == 0 && !Settings.minimized ? View.VISIBLE : View.GONE);
@@ -158,6 +160,7 @@ public class BotService extends Service implements Bot.Host {
             pinballSettings.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
             goldrushSettings.setVisibility(i == 2 ? View.VISIBLE : View.GONE);
             zoboSettings.setVisibility(i == 3 ? View.VISIBLE : View.GONE);
+            shamanSettings.setVisibility(i == 4 ? View.VISIBLE : View.GONE);
         }
         refreshUi();
     }
@@ -246,7 +249,9 @@ public class BotService extends Service implements Bot.Host {
         new Thread(goldrush, "goldrush").start();
         zobo = new ZoboFarmMode(this);
         new Thread(zobo, "zobo").start();
-        modes = new Mode[]{bot, pinball, goldrush, zobo};
+        shaman = new ShamanHunterMode(this);
+        new Thread(shaman, "shaman").start();
+        modes = new Mode[]{bot, pinball, goldrush, zobo, shaman};
         selectMode(Settings.mode);
         applyMinimized();
         refreshUi();
@@ -524,6 +529,9 @@ public class BotService extends Service implements Bot.Host {
         zoboSettings = new LinearLayout(this);
         zoboSettings.setOrientation(LinearLayout.VERTICAL);
         settingsBox.addView(zoboSettings);
+        shamanSettings = new LinearLayout(this);
+        shamanSettings.setOrientation(LinearLayout.VERTICAL);
+        settingsBox.addView(shamanSettings);
         StringBuilder gtips = new StringBuilder("Goldrush advisor (read-only, never taps)\n");
         for (String tipText : GoldrushMode.TIPS) gtips.append("• ").append(tipText).append('\n');
         goldrushSettings.addView(text(gtips.toString(), 11, 0xFFDDE6FF));
@@ -595,6 +603,21 @@ public class BotService extends Service implements Bot.Host {
                 + "Select Trozobo in the Zobo Shooter menu before entering - the bot checks both "
                 + "the menu selection and the arena title, and refuses to shoot anywhere else.",
                 11, 0xFF8FA0BD));
+
+        target = shamanSettings;
+        addSlider("Stop after Shaman hunts (0 = no limit)", "", 0, 50, Settings.shamanHunts,
+                v -> Settings.shamanHunts = v);
+        addSlider("Stop after checking rooms (0 = no limit)", "", 0, 1000, Settings.shamanMaxRooms,
+                v -> Settings.shamanMaxRooms = v);
+        addSlider("Look for a Shaman in each room for", "ms", 1000, 6000, Settings.shamanScanMs,
+                v -> Settings.shamanScanMs = v);
+        addSlider("Re-use power-ups every (while Shaman alive)", "s", 15, 60, Settings.shamanReuseSec,
+                v -> Settings.shamanReuseSec = v);
+        addSlider("Give up on a Shaman after", "s", 20, 180, Settings.shamanMaxFightSec,
+                v -> Settings.shamanMaxFightSec = v);
+        shamanSettings.addView(text("Vienzobo only (200 coins per shot). It never shoots by hand: "
+                + "all shots come from Lock On, which aims at the Shaman. Each hunt uses one "
+                + "Lock On + one Enrage (more if the Shaman survives them).", 11, 0xFF8FA0BD));
 
         target = settingsBox;
         TextView gen = text("All modes", 12, 0xFFBFD4FF);

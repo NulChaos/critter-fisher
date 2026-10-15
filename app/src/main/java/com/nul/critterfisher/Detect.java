@@ -218,16 +218,14 @@ public class Detect {
      * right, which never move and which the overlay panel at the top can't hide.
      */
     public static boolean isZoboArena(Frame f) {
-        int[] enrBg = patch(f, new float[]{800, 1625});
-        int[] ring = patch(f, new float[]{800, 1745});
-        boolean enrageGrey = Math.abs(enrBg[0] - enrBg[1]) < 15 && Math.abs(enrBg[1] - enrBg[2]) < 15
-                && enrBg[0] > 100 && enrBg[0] < 170;
-        boolean lockPurple = ring[0] > 150 && ring[1] < 180 && ring[2] > 200 && ring[2] - ring[1] > 50;
-        // The Enrage and Lock On buttons never move, so they are the arena's fingerprint.
-        // (The coin icon shifts as the balance text changes, so it isn't used.)
-        int[] fire = patch(f, new float[]{820, 1540});
-        boolean enrageIcon = fire[0] > 220 && fire[1] > 150;          // bright flame icon
-        return enrageGrey && lockPurple && enrageIcon;
+        // Orange/yellow flame of the Enrage icon and purple ring of the Lock On icon.
+        float flame = coverage(f, 790, 1495, 870, 1590,
+                (r, g, b) -> r > 200 && g > 90 && g < 235 && b < 110);
+        float ring = coverage(f, 785, 1700, 875, 1790,
+                (r, g, b) -> b > 170 && b - g > 45 && r > 110);
+        // arenas measure ~0.21-0.26 flame and ~0.30 ring; full-screen transitions are 1.0 flame
+        return flame > 0.12f && flame < 0.6f && ring > 0.15f && ring < 0.6f
+                && !isGoldrushMap(f);              // its League button has similar colours
     }
 
     /** The yellow multiplier badge at the top is visible (i.e. not covered by the panel). */
@@ -271,6 +269,43 @@ public class Detect {
     static final boolean[] TROZOBO_TITLE = new boolean[TITLE_R * TITLE_C];
     static {
         for (int i = 0; i < TROZOBO_TITLE.length; i++) TROZOBO_TITLE[i] = TROZOBO_TITLE_STR.charAt(i) == '#';
+    }
+
+    /** Title mask of "Vienzobo Arena" (from the user's Shaman recording). */
+    static final String VIENZOBO_TITLE_STR =
+            "...................................." +
+            "#.##............#.......##.........." +
+            "#.##.##########.######..##.#######.#" +
+            "##########.#.####.##.#.###.#########" +
+            "##.############.######.#.###.###.###" +
+            "....................................";
+    static final boolean[] VIENZOBO_TITLE = new boolean[TITLE_R * TITLE_C];
+    static {
+        for (int i = 0; i < VIENZOBO_TITLE.length; i++) VIENZOBO_TITLE[i] = VIENZOBO_TITLE_STR.charAt(i) == '#';
+    }
+
+    /** True when the title area shows readable white text (not covered by the panel). */
+    public static boolean titleReadable(boolean[] mask) {
+        int n = 0;
+        for (boolean b : mask) if (b) n++;
+        return n >= 25;
+    }
+
+    // Zobo Shooter controls (reference coordinates)
+    public static final float[] P_ZOBO_EXIT = {461, 1940};     // X at the bottom of an arena
+    public static final float[] P_ZOBO_START = {530, 1920};    // Start Now in the lobby
+    public static final float[] P_LOCK_ON = {830, 1745};
+    public static final float[] P_ENRAGE = {830, 1560};
+
+    /** Boss portrait above the Enrage button: 0 = none, 1 = some other boss, 2 = Shaman. */
+    public static int bossPortrait(Frame f) {
+        float red = coverage(f, 775, 1320, 923, 1500, (r, g, b) -> r > 180 && g < 80 && b < 90);
+        if (red < 0.06f) return 0;
+        float orange = coverage(f, 800, 1350, 905, 1470,
+                (r, g, b) -> r > 215 && g > 140 && g < 215 && b < 90);
+        float green = coverage(f, 800, 1350, 905, 1470, (r, g, b) -> g > 110 && g > r + 15 && b < 130);
+        if (orange >= 0.03f && green < 0.06f) return 2;     // orange tiki mask
+        return 1;                                            // green face or anything else
     }
 
     public static float titleSimilarity(boolean[] a, boolean[] b) {

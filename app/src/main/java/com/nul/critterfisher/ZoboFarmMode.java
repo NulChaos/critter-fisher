@@ -78,9 +78,9 @@ public class ZoboFarmMode implements Mode {
 
             if (Detect.isZoboArena(f)) {
                 offSince = -1;
-                boolean titleVisible = Detect.badgeVisible(f);
-                float sim = titleVisible
-                        ? Detect.titleSimilarity(Detect.titleMask(f), Detect.TROZOBO_TITLE) : 1f;
+                boolean[] title = Detect.titleMask(f);
+                boolean titleVisible = Detect.titleReadable(title);
+                float sim = titleVisible ? Detect.titleSimilarity(title, Detect.TROZOBO_TITLE) : 1f;
                 if (lobbyArena < 0) {
                     stop("Open Trozobo from the Zobo Shooter menu first, so I can confirm the arena.");
                     continue;
