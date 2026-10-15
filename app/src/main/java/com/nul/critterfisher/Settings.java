@@ -28,6 +28,8 @@ public class Settings {
     public static volatile int shamanScanMs = 2500;
     public static volatile int shamanReuseSec = 21;
     public static volatile int shamanMaxFightSec = 60;
+    /** Off = finder only: stop and alert when a Shaman is found, you fight it. */
+    public static volatile boolean shamanAutoFight = false;
     public static volatile boolean autoStart = false;
     /** Experimental: Android 14+ "share a single app". Off by default - froze a Samsung phone. */
     public static volatile boolean shareSingleApp = false;
@@ -58,6 +60,7 @@ public class Settings {
         shamanScanMs = p.getInt("shScan", shamanScanMs);
         shamanReuseSec = p.getInt("shReuse", shamanReuseSec);
         shamanMaxFightSec = p.getInt("shFight", shamanMaxFightSec);
+        shamanAutoFight = p.getBoolean("shAuto", shamanAutoFight);
         autoStart = p.getBoolean("autoSt", autoStart);
         shareSingleApp = p.getBoolean("single", shareSingleApp);
         calcCurrency = p.getInt("calcCur", calcCurrency);
@@ -77,7 +80,8 @@ public class Settings {
                 .putBoolean("autoSt", autoStart).putBoolean("single", shareSingleApp).putInt("zN", zoboShots)
                 .putInt("zMs", zoboIntervalMs).putInt("shN", shamanHunts)
                 .putInt("shRooms", shamanMaxRooms).putInt("shScan", shamanScanMs)
-                .putInt("shReuse", shamanReuseSec).putInt("shFight", shamanMaxFightSec).putInt("calcCur", calcCurrency)
+                .putInt("shReuse", shamanReuseSec).putInt("shFight", shamanMaxFightSec)
+                .putBoolean("shAuto", shamanAutoFight).putInt("calcCur", calcCurrency)
                 .putInt("calcN", calcTarget).apply();
     }
 }

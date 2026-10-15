@@ -131,20 +131,29 @@ public class ShamanHunterMode implements Mode {
         }
     }
 
-    /** In an arena: scan for a Shaman, fight it if present, then leave. */
+    /** In an arena: scan for a Shaman; finder mode stops and alerts, auto-fight fights it. */
     private void handleRoom() {
         phase("scanning for Shaman");
         double scanEnd = now() + Settings.shamanScanMs / 1000.0;
-        int seen = 0;
+        int hits = 0, frames = 0;
         while (alive && running && now() < scanEnd) {
             Frame f = host.next(150);
             if (f == null) continue;
-            int b = Detect.bossPortrait(f);
-            if (b == 2) { if (++seen >= 2) break; } else seen = 0;   // two frames in a row
+            frames++;
+            if (Detect.bossPortrait(f) == 2) hits++;
+            if (hits >= 3) break;              // seen in 3 frames: effects flash, a Shaman stays
             LockSupport.parkNanos(60_000_000L);
         }
         if (!running) return;
-        if (seen >= 2) fight();
+        if (hits >= 3) {
+            host.saveFrame("shaman-found");
+            if (!Settings.shamanAutoFight) {
+                hunts++;
+                stop("Shaman found! It's your turn - use Lock On + Enrage. Press ▶ to keep searching after.");
+                return;                        // stay in the room
+            }
+            fight();
+        }
         leaveRoom();
     }
 

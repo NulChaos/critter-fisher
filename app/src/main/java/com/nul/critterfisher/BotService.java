@@ -36,6 +36,15 @@ import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.content.ContentValues;
+import android.graphics.Bitmap;
+import android.provider.MediaStore;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import java.nio.ByteBuffer;
 import java.util.Random;
@@ -366,6 +375,59 @@ public class BotService extends Service implements Bot.Host {
         return TapService.tap(x / Detect.REF_W * realW, y / Detect.REF_H * realH);
     }
 
+    // ---------------------------------------------------- frame saving (debug)
+    private int savedFrames = 0;
+
+    /** Saves the newest captured screen as a PNG in Pictures/CritterFisher, plus what the bot read. */
+    @Override public void saveFrame(String tag) {
+        new Thread(() -> {
+            byte[] copy;
+            int w, h, stride;
+            String readings;
+            synchronized (this) {                 // same lock as next(): the frame can't change mid-copy
+                Detect.Frame f = next(300);
+                if (f == null) { main.post(() -> { shown.message = "Nothing to save (game not visible)"; refreshUi(); }); return; }
+                copy = f.data.clone();
+                w = f.w; h = f.h; stride = f.stride;
+                boolean[] title = Detect.titleMask(f);
+                readings = String.format(Locale.US, "%s_%s_portrait%d_arena%d_lobby%d_tz%.2f_vz%.2f",
+                        tag, Detect.screenOf(f), Detect.bossPortrait(f), Detect.isZoboArena(f) ? 1 : 0,
+                        Detect.zoboLobbyArena(f), Detect.titleSimilarity(title, Detect.TROZOBO_TITLE),
+                        Detect.titleSimilarity(title, Detect.VIENZOBO_TITLE));
+            }
+            try {
+                Bitmap full = Bitmap.createBitmap(stride / 4, h, Bitmap.Config.ARGB_8888);
+                full.copyPixelsFromBuffer(ByteBuffer.wrap(copy, 0, Math.min(copy.length, stride * h)));
+                Bitmap bmp = Bitmap.createBitmap(full, 0, 0, w, h);
+                String name = "cf_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date())
+                        + "_" + readings.replace('.', 'p') + ".png";
+                OutputStream out;
+                String where;
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ContentValues cv = new ContentValues();
+                    cv.put(MediaStore.Images.Media.DISPLAY_NAME, name);
+                    cv.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+                    cv.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CritterFisher");
+                    android.net.Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                    out = getContentResolver().openOutputStream(uri);
+                    where = "Pictures/CritterFisher";
+                } else {
+                    File dir = getExternalFilesDir("frames");
+                    out = new FileOutputStream(new File(dir, name));
+                    where = dir.getPath();
+                }
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+                out.close();
+                savedFrames++;
+                final String m = "📷 Saved frame #" + savedFrames + " to " + where;
+                main.post(() -> { shown.message = m; refreshUi(); });
+            } catch (Exception e) {
+                final String m = "Couldn't save frame: " + e.getMessage();
+                main.post(() -> { shown.message = m; refreshUi(); });
+            }
+        }, "save-frame").start();
+    }
+
     // ---------------------------------------------------- session / alerts
     private long sessionStartMs = 0;
     private int sessionStartCount = 0;
@@ -490,7 +552,7 @@ public class BotService extends Service implements Bot.Host {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("≡ Critter Fisher", 14, 0xFFBFD4FF);
+        TextView title = text("≡ CF", 14, 0xFFBFD4FF);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, dp(4), dp(4), dp(4));
         playBtn = button("▶", 0xFF2E9E4F);
@@ -498,10 +560,12 @@ public class BotService extends Service implements Bot.Host {
         TextView gear = button("⚙", 0xFF3A4660);
         TextView close = button("✕", 0xFF8A2D3A);
         TextView mini = button("–", 0xFF3A4660);
+        TextView snap = button("📷", 0xFF3A4660);
         header.addView(title);
         header.addView(modeBtn);
         header.addView(playBtn);
         header.addView(gear);
+        header.addView(snap);
         header.addView(mini);
         header.addView(close);
         panel.addView(header);
@@ -611,13 +675,16 @@ public class BotService extends Service implements Bot.Host {
                 v -> Settings.shamanMaxRooms = v);
         addSlider("Look for a Shaman in each room for", "ms", 1000, 6000, Settings.shamanScanMs,
                 v -> Settings.shamanScanMs = v);
+        addCheck("Auto-fight (experimental) - off = just find and alert", Settings.shamanAutoFight,
+                v -> Settings.shamanAutoFight = v);
         addSlider("Re-use power-ups every (while Shaman alive)", "s", 15, 60, Settings.shamanReuseSec,
                 v -> Settings.shamanReuseSec = v);
         addSlider("Give up on a Shaman after", "s", 20, 180, Settings.shamanMaxFightSec,
                 v -> Settings.shamanMaxFightSec = v);
-        shamanSettings.addView(text("Vienzobo only (200 coins per shot). It never shoots by hand: "
-                + "all shots come from Lock On, which aims at the Shaman. Each hunt uses one "
-                + "Lock On + one Enrage (more if the Shaman survives them).", 11, 0xFF8FA0BD));
+        shamanSettings.addView(text("Vienzobo only. Finder (default): hops rooms and stops + buzzes "
+                + "when it sees a Shaman - you fight it, then press ▶ to keep searching. Nothing it "
+                + "does costs coins. Tap 📷 whenever you see a Shaman (or a mistake) to save the "
+                + "screen to Pictures/CritterFisher, and send those files over.", 11, 0xFF8FA0BD));
 
         target = settingsBox;
         TextView gen = text("All modes", 12, 0xFFBFD4FF);
@@ -660,6 +727,7 @@ public class BotService extends Service implements Bot.Host {
             if (!open) Settings.save(this);
         });
         close.setOnClickListener(v -> stopSelf());
+        snap.setOnClickListener(v -> saveFrame("manual"));
         mini.setOnClickListener(v -> {
             Settings.minimized = !Settings.minimized;
             Settings.save(this);

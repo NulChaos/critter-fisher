@@ -15,6 +15,8 @@ public class Bot implements Mode {
         /** Tap at a reference-space point. Returns false if the tap service is off. */
         boolean tap(float[] refPoint);
         void onStatus(Status s);
+        /** Save the current screen (and what the bot read from it) for debugging. */
+        default void saveFrame(String tag) { }
     }
 
     /** Snapshot for the overlay. */
