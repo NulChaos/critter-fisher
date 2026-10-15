@@ -218,7 +218,13 @@ public class Detect {
      * Enrage button, purple Lock On ring) so the overlay panel at the top can't hide it.
      */
     public static boolean isZoboArena(Frame f) {
-        int[] coin = patch(f, new float[]{380, 1795});
+        // The coin icon slides left/right as the balance text changes length
+        // ("404.23K" vs "404K"), so look for it anywhere along the pill.
+        int[] coin = {0, 0, 0};
+        for (float cx = 320; cx <= 470; cx += 10) {
+            int[] c = patch(f, new float[]{cx, 1795});
+            if (c[0] > 170 && c[1] > 110 && c[1] < 200 && c[2] < 90) { coin = c; break; }
+        }
         int[] enrBg = patch(f, new float[]{800, 1625});
         int[] ring = patch(f, new float[]{800, 1745});
         boolean coinGold = coin[0] > 170 && coin[1] > 110 && coin[1] < 200 && coin[2] < 90;
